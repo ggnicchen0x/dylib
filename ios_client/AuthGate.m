@@ -13,9 +13,9 @@
 #define KEYCHAIN_KEY @"com.proxyvn.auth.license_key"
 #define KEYCHAIN_HWID @"com.proxyvn.auth.device_hwid"
 
-// Exact Theme Colors
+// Exact Theme Palette
 #define THEME_BG          [UIColor colorWithRed:0.04 green:0.05 blue:0.08 alpha:1.0] // #0a0d14 Deep Obsidian
-#define THEME_CARD_BG     [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.98] // #141c2e Dark Frosted Glass Card
+#define THEME_CARD_BG     [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.98] // #141c2e Dark Frosted Card
 #define THEME_CARD_BORDER [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:0.35] // #6366f1 Glowing Indigo Border
 #define THEME_ACCENT      [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:1.0] // #6366f1 Neon Indigo
 #define THEME_TEXT_WHITE  [UIColor colorWithRed:0.97 green:0.98 blue:0.99 alpha:1.0] // #f8fafc Clean Crisp White
@@ -75,6 +75,95 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
         method_exchangeImplementations(origMethod, newMethod);
     }
 }
+
+static void SwizzleClassMethod(Class cls, SEL origSel, SEL newSel) {
+    if (!cls) return;
+    Method origMethod = class_getClassMethod(cls, origSel);
+    Method newMethod = class_getClassMethod(cls, newSel);
+    if (!origMethod || !newMethod) return;
+    
+    Class metaClass = object_getClass((id)cls);
+    BOOL didAdd = class_addMethod(metaClass, origSel, method_getImplementation(newMethod), method_getTypeEncoding(newMethod));
+    if (didAdd) {
+        class_replaceMethod(metaClass, newSel, method_getImplementation(origMethod), method_getTypeEncoding(origMethod));
+    } else {
+        method_exchangeImplementations(origMethod, newMethod);
+    }
+}
+
+// ==========================================
+// ProxyVN Internal Gate Integration & Neutralization
+// ==========================================
+static BOOL g_isAuthenticated = NO;
+
+@interface ProxyVNBridge : NSObject
++ (void)notifyAppGatePassed;
+@end
+
+@implementation ProxyVNBridge
+
++ (void)notifyAppGatePassed {
+    g_isAuthenticated = YES;
+    
+    // 1. Notify ActivationCard
+    Class actCardClass = objc_getClass("ActivationCard");
+    if (actCardClass) {
+        SEL finishSel = @selector(finishGate);
+        if ([actCardClass respondsToSelector:finishSel]) {
+            #pragma clang diagnostic push
+            #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            [actCardClass performSelector:finishSel];
+            #pragma clang diagnostic pop
+        }
+        
+        SEL setDoneSel = @selector(setGateDone:);
+        if ([actCardClass respondsToSelector:setDoneSel]) {
+            NSMethodSignature *sig = [actCardClass methodSignatureForSelector:setDoneSel];
+            if (sig) {
+                NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+                [inv setTarget:actCardClass];
+                [inv setSelector:setDoneSel];
+                BOOL val = YES;
+                [inv setArgument:&val atIndex:2];
+                [inv invoke];
+            }
+        }
+    }
+    
+    // 2. Notify FluckAuthCore
+    Class fluckClass = objc_getClass("FluckAuthCore");
+    if (fluckClass) {
+        SEL markSel = @selector(markGatePassed);
+        if ([fluckClass respondsToSelector:markSel]) {
+            #pragma clang diagnostic push
+            #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            [fluckClass performSelector:markSel];
+            #pragma clang diagnostic pop
+        }
+    }
+}
+
+@end
+
+// Hook ActivationCard to prevent original activation dialog and force gateDone = YES
+@interface NSObject (ActivationCardHooks)
+@end
+
+@implementation NSObject (ActivationCardHooks)
+
+- (void)hook_showActivationCard {
+    // Suppress original activation dialog
+}
+
+- (void)hook_showActivationCardWithError:(id)arg1 {
+    // Suppress original activation dialog
+}
+
+- (BOOL)hook_gateDone {
+    return g_isAuthenticated;
+}
+
+@end
 
 // ==========================================
 // Precision Theme Hooks for ProxyVN UI
@@ -278,6 +367,15 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
 + (void)install {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
+        // 1. ActivationCard hooks to neutralize old gate and return gateDone = YES
+        Class actCardClass = objc_getClass("ActivationCard");
+        if (actCardClass) {
+            SwizzleClassMethod(actCardClass, @selector(showActivationCard), @selector(hook_showActivationCard));
+            SwizzleClassMethod(actCardClass, @selector(showActivationCardWithError:), @selector(hook_showActivationCardWithError:));
+            SwizzleClassMethod(actCardClass, @selector(gateDone), @selector(hook_gateDone));
+        }
+        
+        // 2. MenuSwitchItem class hook
         Class switchItemClass = objc_getClass("MenuSwitchItem");
         if (switchItemClass) {
             SwizzleInstanceMethod(switchItemClass, @selector(initWithFrame:), @selector(hook_initMenuSwitchItemWithFrame:));
@@ -554,7 +652,10 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
                 self.statusLabel.textColor = [UIColor colorWithRed:0.2 green:0.85 blue:0.45 alpha:1.0];
                 self.statusLabel.text = [NSString stringWithFormat:@"Access Granted! (%@)", remainStr];
                 
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                // Notify ProxyVN internal engine that gate has passed
+                [ProxyVNBridge notifyAppGatePassed];
+                
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                     if (self.onSuccessBlock) {
                         self.onSuccessBlock();
                     }
@@ -572,7 +673,7 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
 @end
 
 // ==========================================
-// Auth Gate Presenter (Modal Presentation Engine)
+// Auth Gate Presenter
 // ==========================================
 @interface AuthGatePresenter : NSObject
 + (instancetype)shared;
