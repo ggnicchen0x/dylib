@@ -77,7 +77,7 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
 }
 
 // ==========================================
-// Method 1: Precision Class Hooks for ProxyVN UI
+// Precision Theme Hooks for ProxyVN UI
 // ==========================================
 
 // 1. Hook MenuSwitchItem (Drag, 100% Body, 95% Body, Maggic Bullet, ModChest)
@@ -93,7 +93,6 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
         item.layer.cornerRadius = 14;
         item.layer.borderColor = THEME_CARD_BORDER.CGColor;
         item.layer.borderWidth = 1.0;
-        // Never set masksToBounds = YES on container cards to prevent clipping!
     }
     return item;
 }
@@ -139,7 +138,6 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
     self.onTintColor = THEME_ACCENT;
     self.thumbTintColor = [UIColor whiteColor];
     
-    // Style immediate parent row
     UIView *p = self.superview;
     if (p && ![p isKindOfClass:[UIScrollView class]] && ![p isKindOfClass:[UITableView class]]) {
         p.backgroundColor = THEME_CARD_BG;
@@ -151,7 +149,7 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
 
 @end
 
-// 4. Hook ProxyExploitViewController & ProxyNoExploitViewController viewDidLoad
+// 4. Hook UIViewController viewDidLoad for Background & TabBar
 @interface UIViewController (ExploitVCHook)
 @end
 
@@ -165,7 +163,6 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
     
     self.view.backgroundColor = THEME_BG;
     
-    // Configure TabBar
     if (self.tabBarController) {
         UITabBar *tb = self.tabBarController.tabBar;
         tb.barTintColor = THEME_BG;
@@ -281,28 +278,16 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
 + (void)install {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        // 1. MenuSwitchItem class hook
         Class switchItemClass = objc_getClass("MenuSwitchItem");
         if (switchItemClass) {
             SwizzleInstanceMethod(switchItemClass, @selector(initWithFrame:), @selector(hook_initMenuSwitchItemWithFrame:));
         }
         
-        // 2. UILabel hook
         SwizzleInstanceMethod([UILabel class], @selector(setText:), @selector(hook_setText:));
-        
-        // 3. UISwitch hook
         SwizzleInstanceMethod([UISwitch class], @selector(didMoveToSuperview), @selector(hook_switchDidMoveToSuperview));
-        
-        // 4. UIViewController hook
         SwizzleInstanceMethod([UIViewController class], @selector(viewDidLoad), @selector(hook_viewDidLoad));
-        
-        // 5. UITableViewCell hook
         SwizzleInstanceMethod([UITableViewCell class], @selector(initWithStyle:reuseIdentifier:), @selector(hook_initWithStyle:reuseIdentifier:));
-        
-        // 6. UIButton hook
         SwizzleInstanceMethod([UIButton class], @selector(setTitle:forState:), @selector(hook_setTitle:forState:));
-        
-        // 7. UISegmentedControl hook
         SwizzleInstanceMethod([UISegmentedControl class], @selector(didMoveToSuperview), @selector(hook_segmentDidMoveToSuperview));
     });
 }
@@ -310,7 +295,7 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
 @end
 
 // ==========================================
-// Auth Gate View Controller (Fully Responsive)
+// Auth Gate View Controller (Modal Style)
 // ==========================================
 @interface AuthGateViewController : UIViewController <UITextFieldDelegate>
 @property (nonatomic, strong) UITextField *keyTextField;
@@ -328,7 +313,7 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.view.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.85];
+    self.view.backgroundColor = [UIColor colorWithRed:0.02 green:0.03 blue:0.05 alpha:0.95];
     self.view.userInteractionEnabled = YES;
     
     UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dismissKeyboard)];
@@ -356,9 +341,9 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
     CGFloat cardHeight = 440;
     
     self.cardView = [[UIView alloc] initWithFrame:CGRectMake((self.view.bounds.size.width - cardWidth)/2, (self.view.bounds.size.height - cardHeight)/2, cardWidth, cardHeight)];
-    self.cardView.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.95];
+    self.cardView.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.98];
     self.cardView.layer.cornerRadius = 20;
-    self.cardView.layer.borderColor = [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:0.3].CGColor;
+    self.cardView.layer.borderColor = [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:0.35].CGColor;
     self.cardView.layer.borderWidth = 1.5;
     self.cardView.layer.shadowColor = [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:0.4].CGColor;
     self.cardView.layer.shadowOffset = CGSizeMake(0, 10);
@@ -569,7 +554,7 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
                 self.statusLabel.textColor = [UIColor colorWithRed:0.2 green:0.85 blue:0.45 alpha:1.0];
                 self.statusLabel.text = [NSString stringWithFormat:@"Access Granted! (%@)", remainStr];
                 
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                     if (self.onSuccessBlock) {
                         self.onSuccessBlock();
                     }
@@ -587,59 +572,58 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
 @end
 
 // ==========================================
-// Auth Gate Manager
+// Auth Gate Presenter (Modal Presentation Engine)
 // ==========================================
-@interface AuthGateManager : NSObject
-@property (nonatomic, strong) UIWindow *authWindow;
+@interface AuthGatePresenter : NSObject
 + (instancetype)shared;
-- (void)startAuthGate;
+- (void)presentGate;
 @end
 
-@implementation AuthGateManager
+@implementation AuthGatePresenter
 
 + (instancetype)shared {
-    static AuthGateManager *inst = nil;
+    static AuthGatePresenter *inst = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        inst = [[AuthGateManager alloc] init];
+        inst = [[AuthGatePresenter alloc] init];
     });
     return inst;
 }
 
-- (void)startAuthGate {
+- (void)presentGate {
     dispatch_async(dispatch_get_main_queue(), ^{
         [TargetedThemeInstaller install];
         
-        UIScreen *mainScreen = [UIScreen mainScreen];
-        self.authWindow = [[UIWindow alloc] initWithFrame:mainScreen.bounds];
-        self.authWindow.windowLevel = UIWindowLevelAlert + 100;
-        self.authWindow.userInteractionEnabled = YES;
+        UIWindow *mainWin = nil;
+        for (UIWindow *w in [UIApplication sharedApplication].windows) {
+            if (!w.hidden && w.rootViewController) {
+                mainWin = w;
+                break;
+            }
+        }
         
-        AuthGateViewController *vc = [[AuthGateViewController alloc] init];
-        __weak typeof(self) weakSelf = self;
-        vc.onSuccessBlock = ^{
-            [UIView animateWithDuration:0.4 animations:^{
-                weakSelf.authWindow.alpha = 0.0;
-            } completion:^(BOOL finished) {
-                UIWindow *appWindow = nil;
-                for (UIWindow *w in [UIApplication sharedApplication].windows) {
-                    if (w != weakSelf.authWindow && !w.hidden) {
-                        appWindow = w;
-                        break;
-                    }
-                }
-                if (appWindow) {
-                    [appWindow makeKeyAndVisible];
-                }
-                
-                weakSelf.authWindow.hidden = YES;
-                weakSelf.authWindow.rootViewController = nil;
-                weakSelf.authWindow = nil;
-            }];
+        if (!mainWin || !mainWin.rootViewController) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self presentGate];
+            });
+            return;
+        }
+        
+        UIViewController *rootVC = mainWin.rootViewController;
+        while (rootVC.presentedViewController) {
+            rootVC = rootVC.presentedViewController;
+        }
+        
+        if ([rootVC isKindOfClass:[AuthGateViewController class]]) return;
+        
+        AuthGateViewController *gateVC = [[AuthGateViewController alloc] init];
+        gateVC.modalPresentationStyle = UIModalPresentationOverFullScreen;
+        gateVC.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
+        gateVC.onSuccessBlock = ^{
+            [gateVC dismissViewControllerAnimated:YES completion:nil];
         };
         
-        self.authWindow.rootViewController = vc;
-        [self.authWindow makeKeyAndVisible];
+        [rootVC presentViewController:gateVC animated:NO completion:nil];
     });
 }
 
@@ -656,6 +640,6 @@ static void InitAuthGate() {
                                                       object:nil
                                                        queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification * _Nonnull note) {
-        [[AuthGateManager shared] startAuthGate];
+        [[AuthGatePresenter shared] presentGate];
     }];
 }
