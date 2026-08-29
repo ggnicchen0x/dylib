@@ -112,27 +112,29 @@
             UILabel *lbl = (UILabel *)sub;
             NSString *text = lbl.text ?: @"";
             
+            // Check if label is inside a switch row card
+            BOOL isInsideSwitchCard = NO;
+            UIView *p = lbl.superview;
+            if (p) {
+                for (UIView *sibling in p.subviews) {
+                    if ([sibling isKindOfClass:[UISwitch class]]) {
+                        isInsideSwitchCard = YES;
+                        break;
+                    }
+                }
+            }
+            
             if ([text isEqualToString:@"Exploit"] || [text isEqualToString:@"No Exploit"] || [text isEqualToString:@"Account"]) {
                 lbl.textColor = THEME_TEXT_WHITE;
                 lbl.font = [UIFont systemFontOfSize:22 weight:UIFontWeightHeavy];
-            } else if ([text containsString:@"Exploit:"] || [text containsString:@"sandbox"] || [text containsString:@"iOS "] || [text containsString:@"not started"]) {
-                // Top status box labels: Crisp light cyan/slate (#c7d2fe) matching reference image
-                lbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
-                lbl.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
-            } else if ([text containsString:@"no target file"] || [text containsString:@"patch bytes"] || [text containsString:@"sandbox access"]) {
-                // Bottom footer/diagnostics text: Bright light cyan/slate matching top status text
-                lbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
-                lbl.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
-            } else if ([text isEqualToString:@"Drag"] || [text isEqualToString:@"100% Body"] || [text isEqualToString:@"95% Body"] || [text isEqualToString:@"Maggic Bullet"] || [text isEqualToString:@"ModChest"]) {
-                // Feature label: Dark bold black for clear visibility on the white card
+            } else if (isInsideSwitchCard || [text isEqualToString:@"Drag"] || [text isEqualToString:@"100% Body"] || [text isEqualToString:@"95% Body"] || [text isEqualToString:@"Maggic Bullet"] || [text isEqualToString:@"ModChest"]) {
+                // Feature label inside white card: Dark bold black
                 lbl.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
                 lbl.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
-            } else if ([text containsString:@"Select an option"] || [text isEqualToString:@"Free Fire"] || [text isEqualToString:@"Lifetime"]) {
-                lbl.textColor = THEME_TEXT_WHITE;
-                lbl.font = [UIFont systemFontOfSize:13 weight:UIFontWeightBold];
             } else {
-                lbl.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
-                lbl.font = [UIFont systemFontOfSize:14 weight:UIFontWeightBold];
+                // All status, diagnostics, and dynamic messages on the dark background ("Drag applied ✓", "Exploit: running", etc.): Bright Light Cyan/Slate
+                lbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
+                lbl.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
             }
         }
         
@@ -227,6 +229,42 @@
 @end
 
 // ==========================================
+// Dynamic Label Hook (for Runtime Messages like "Drag applied ✓")
+// ==========================================
+@interface UILabel (DynamicRuntimeThemeHook)
+@end
+
+@implementation UILabel (DynamicRuntimeThemeHook)
+
+- (void)hook_dynamicRuntimeSetText:(NSString *)text {
+    [self hook_dynamicRuntimeSetText:text];
+    if (!text || [NSStringFromClass([self class]) containsString:@"AuthGate"]) return;
+    
+    // Check if this label is inside a switch row card
+    BOOL isInsideSwitchCard = NO;
+    UIView *p = self.superview;
+    if (p) {
+        for (UIView *sibling in p.subviews) {
+            if ([sibling isKindOfClass:[UISwitch class]]) {
+                isInsideSwitchCard = YES;
+                break;
+            }
+        }
+    }
+    
+    if (isInsideSwitchCard || [text isEqualToString:@"Drag"] || [text isEqualToString:@"100% Body"] || [text isEqualToString:@"95% Body"] || [text isEqualToString:@"Maggic Bullet"] || [text isEqualToString:@"ModChest"]) {
+        self.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
+    } else if ([text isEqualToString:@"Exploit"] || [text isEqualToString:@"No Exploit"] || [text isEqualToString:@"Account"]) {
+        self.textColor = THEME_TEXT_WHITE;
+    } else {
+        // Any status/diagnostics/runtime toast on the dark background ("Drag applied ✓", "Exploit: running", etc.)
+        self.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
+    }
+}
+
+@end
+
+// ==========================================
 // Swizzle Specifically for Exploit View Controllers
 // ==========================================
 static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
@@ -260,6 +298,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         SwizzleMethod([UIViewController class], @selector(viewDidLayoutSubviews), @selector(hook_viewDidLayoutSubviews));
+        SwizzleMethod([UILabel class], @selector(setText:), @selector(hook_dynamicRuntimeSetText:));
     });
 }
 
