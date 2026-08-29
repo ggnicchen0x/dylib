@@ -50,6 +50,7 @@ static inline NSString *GET_SUPPORT_URL(void) {
     return GetDecryptedString(ENC_SUPPORT_URL, ENC_SUPPORT_URL_LEN, 0x5A);
 }
 
+#define CURRENT_CLIENT_VERSION @"v1.1"
 #define APP_TITLE @"EXTERNALFF AUTHENTICATION"
 #define APP_SUBTITLE @"Live Realtime License Verification"
 #define KEYCHAIN_KEY @"com.externalff.auth.license_key"
@@ -80,6 +81,7 @@ static inline NSString *GET_SUPPORT_URL(void) {
 + (void)startHeartbeatTimer;
 + (void)stopHeartbeatTimer;
 + (void)triggerSilentBackgroundValidation;
++ (void)showVersionAlertWithRequiredVersion:(NSString *)reqVer discordURL:(NSString *)discordURL customMsg:(NSString *)customMsg;
 @end
 
 // ==========================================
@@ -1131,6 +1133,50 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     return NO;
 }
 
++ (void)showVersionAlertWithRequiredVersion:(NSString *)reqVer discordURL:(NSString *)discordURL customMsg:(NSString *)customMsg {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSString *discord = (discordURL && discordURL.length > 0) ? discordURL : GET_SUPPORT_URL();
+        NSString *msgText = customMsg ?: @"A newer version of ExternalFF is required to continue.";
+        NSString *body = [NSString stringWithFormat:@"%@\n\nInstalled Version: %@\nRequired Version: %@\n\nPlease contact the owner or join Discord to download the latest update.",
+                          msgText, CURRENT_CLIENT_VERSION, (reqVer ?: @"Latest")];
+        
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Newer Version Detected"
+                                                                       message:body
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        
+        UIAlertAction *contactAction = [UIAlertAction actionWithTitle:@"Contact Owner (Discord)"
+                                                                style:UIAlertActionStyleDefault
+                                                              handler:^(UIAlertAction * _Nonnull action) {
+            NSURL *url = [NSURL URLWithString:discord];
+            if ([[UIApplication sharedApplication] canOpenURL:url]) {
+                [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
+            }
+        }];
+        
+        UIAlertAction *cancelAction = [UIAlertAction actionWithTitle:@"OK"
+                                                               style:UIAlertActionStyleCancel
+                                                             handler:nil];
+        
+        [alert addAction:contactAction];
+        [alert addAction:cancelAction];
+        
+        UIWindow *targetWin = nil;
+        for (UIWindow *w in [UIApplication sharedApplication].windows) {
+            if (!w.hidden && w.rootViewController) {
+                targetWin = w;
+                break;
+            }
+        }
+        UIViewController *presenter = targetWin ? targetWin.rootViewController : nil;
+        while (presenter.presentedViewController) {
+            presenter = presenter.presentedViewController;
+        }
+        if (presenter) {
+            [presenter presentViewController:alert animated:YES completion:nil];
+        }
+    });
+}
+
 + (void)triggerSilentBackgroundValidation {
     static BOOL isVerifying = NO;
     if (isVerifying) return;
@@ -1148,7 +1194,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
         @"key": savedKey,
         @"hwid": hwid,
         @"device_name": deviceName,
-        @"app_version": @"1.0"
+        @"app_version": CURRENT_CLIENT_VERSION
     };
     
     NSData *data = [NSJSONSerialization dataWithJSONObject:payload options:0 error:nil];
@@ -1160,8 +1206,22 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     
     NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData * _Nullable resData, NSURLResponse * _Nullable response, NSError * _Nullable error) {
         isVerifying = NO;
+        NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
         if (!error && resData) {
             NSDictionary *json = [NSJSONSerialization JSONObjectWithData:resData options:0 error:nil];
+            NSString *code = json[@"code"] ?: @"";
+            
+            if (httpResp.statusCode == 426 || [code isEqualToString:@"VERSION_OUTDATED"]) {
+                NSString *reqVer = json[@"required_version"] ?: json[@"latest_version"];
+                NSString *disc = json[@"discord_url"];
+                NSString *msg = json[@"message"];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [LiveSecurityGuard showVersionAlertWithRequiredVersion:reqVer discordURL:disc customMsg:msg];
+                    [LiveSecurityGuard enforceLockdownWithReason:msg ?: @"Newer version detected. Update required."];
+                });
+                return;
+            }
+            
             if ([json[@"success"] boolValue]) {
                 NSDictionary *dataDict = json[@"data"] ?: json;
                 NSString *token = json[@"token"] ?: dataDict[@"token"];
@@ -1170,7 +1230,6 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
                     [LiveSecurityGuard setAuthorizedSessionWithKey:savedKey token:token expiresAt:expiresAt];
                 });
             } else {
-                NSString *code = json[@"code"] ?: @"INVALID";
                 if ([code isEqualToString:@"KEY_EXPIRED"] || [code isEqualToString:@"KEY_REVOKED"] || [code isEqualToString:@"HWID_MISMATCH"]) {
                     dispatch_async(dispatch_get_main_queue(), ^{
                         [LiveSecurityGuard enforceLockdownWithReason:json[@"message"] ?: @"Access Denied"];
@@ -1266,7 +1325,8 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     NSDictionary *payload = @{
         @"key": guard.activeKey,
         @"hwid": hwid,
-        @"token": guard.activeToken
+        @"token": guard.activeToken,
+        @"app_version": CURRENT_CLIENT_VERSION
     };
     
     NSError *err;
@@ -1289,11 +1349,25 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
             return;
         }
         
+        NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
         NSDictionary *json = [NSJSONSerialization JSONObjectWithData:resData options:0 error:nil];
+        NSString *code = json[@"code"] ?: @"";
+        
+        if (httpResp.statusCode == 426 || [code isEqualToString:@"VERSION_OUTDATED"]) {
+            NSString *reqVer = json[@"required_version"] ?: json[@"latest_version"];
+            NSString *disc = json[@"discord_url"];
+            NSString *msg = json[@"message"];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [LiveSecurityGuard showVersionAlertWithRequiredVersion:reqVer discordURL:disc customMsg:msg];
+                [LiveSecurityGuard enforceLockdownWithReason:msg ?: @"Newer version detected. Update required."];
+            });
+            return;
+        }
+        
         BOOL valid = [json[@"valid"] boolValue];
         if (!valid) {
-            NSString *code = json[@"code"] ?: @"REVOKED";
-            NSString *msg = [NSString stringWithFormat:@"Access Terminated: %@", code];
+            NSString *c = json[@"code"] ?: @"REVOKED";
+            NSString *msg = [NSString stringWithFormat:@"Access Terminated: %@", c];
             [self enforceLockdownWithReason:msg];
             return;
         }
@@ -1518,7 +1592,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
         @"key": key,
         @"hwid": hwid,
         @"device_name": deviceName,
-        @"app_version": @"1.0"
+        @"app_version": CURRENT_CLIENT_VERSION
     };
     
     NSError *jsonError;
@@ -1546,7 +1620,20 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
                 return;
             }
             
+            NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
             NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            NSString *code = json[@"code"] ?: @"";
+            
+            if (httpResp.statusCode == 426 || [code isEqualToString:@"VERSION_OUTDATED"]) {
+                NSString *reqVer = json[@"required_version"] ?: json[@"latest_version"];
+                NSString *disc = json[@"discord_url"];
+                NSString *msg = json[@"message"];
+                self.statusLabel.textColor = [UIColor colorWithRed:0.95 green:0.3 blue:0.3 alpha:1.0];
+                self.statusLabel.text = @"Newer version detected! Update required.";
+                [LiveSecurityGuard showVersionAlertWithRequiredVersion:reqVer discordURL:disc customMsg:msg];
+                return;
+            }
+            
             BOOL success = [json[@"success"] boolValue];
             NSString *msg = json[@"message"] ?: @"Unknown response";
             
