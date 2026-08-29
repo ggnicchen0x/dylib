@@ -134,13 +134,18 @@
     
     if (!sv) return;
     
-    // Exact Ghidra Layout Geometry:
-    // Original: aimContainer @ y=224.0 (height 300.0, 5 cards). Reset @ y=532.0. ResultLabel @ y=582.0.
-    // 4 Cards (Drag, 100% Body, 95% Body, 200% Magic Bullet): Cards end at y=224+226 = 450.0.
-    // Clean Target Layout:
-    // Reset Button: y = 468.0 (18pt below Magic Bullet card, height 44.0, ends at 512.0)
-    // Result / Status Label: y = 522.0 (10pt below Reset button)
-    // Scroll contentSize height: 670.0
+    NSString *cname = NSStringFromClass([vc class]);
+    BOOL isNoExploit = [cname containsString:@"NoExploit"] || [vc.title isEqualToString:@"Mods"];
+    
+    // Precise Ghidra Geometry:
+    // Home (ProxyExploitViewController, has top START box @ y=48):
+    //   Cards end at y=450.0. Reset @ y=468.0. Status @ y=522.0. ContentSize @ 670.0.
+    // Mods (ProxyNoExploitViewController, no top START box, starts directly at y=16):
+    //   Cards end at y=342.0. Reset @ y=360.0. Status @ y=414.0. ContentSize @ 514.0.
+    
+    CGFloat resetY = isNoExploit ? 360.0 : 468.0;
+    CGFloat statusY = isNoExploit ? 414.0 : 522.0;
+    CGFloat contentH = isNoExploit ? 514.0 : 670.0;
     
     for (UIView *sub in sv.subviews) {
         if ([sub isKindOfClass:[UIButton class]]) {
@@ -148,7 +153,7 @@
             NSString *t = [btn titleForState:UIControlStateNormal] ?: @"";
             if ([t isEqualToString:@"Reset"]) {
                 CGRect f = btn.frame;
-                f.origin.y = 468.0;
+                f.origin.y = resetY;
                 f.size.height = 44.0;
                 btn.frame = f;
             }
@@ -157,15 +162,15 @@
             // Target the multiline status / diagnostics label in the scroll view
             if (lbl.numberOfLines != 1 && lbl.superview == sv) {
                 CGRect f = lbl.frame;
-                f.origin.y = 522.0;
+                f.origin.y = statusY;
                 lbl.frame = f;
             }
         }
     }
     
     CGSize cs = sv.contentSize;
-    if (cs.height > 600) {
-        cs.height = 670.0;
+    if (cs.height > 400) {
+        cs.height = contentH;
         sv.contentSize = cs;
     }
 }
