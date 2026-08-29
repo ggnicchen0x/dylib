@@ -13,13 +13,14 @@
 #define KEYCHAIN_KEY @"com.proxyvn.auth.license_key"
 #define KEYCHAIN_HWID @"com.proxyvn.auth.device_hwid"
 
-// Unified Cyberpunk Theme Constants
-#define COLOR_OBSIDIAN_BG   [UIColor colorWithRed:0.04 green:0.05 blue:0.08 alpha:1.0] // #0a0d14
-#define COLOR_DARK_CARD     [UIColor colorWithRed:0.08 green:0.10 blue:0.16 alpha:1.0] // #141a29
-#define COLOR_DARK_CARD_ALT [UIColor colorWithRed:0.11 green:0.14 blue:0.22 alpha:1.0] // #1c2438
-#define COLOR_NEON_INDIGO   [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:1.0] // #6366f1
-#define COLOR_WHITE_TEXT    [UIColor colorWithRed:0.97 green:0.98 blue:0.99 alpha:1.0] // #f8fafc
-#define COLOR_SLATE_MUTED   [UIColor colorWithRed:0.58 green:0.64 blue:0.72 alpha:1.0] // #94a3b8
+// Exact Unified Cyberpunk Theme Palette
+#define THEME_BG          [UIColor colorWithRed:0.04 green:0.05 blue:0.08 alpha:1.0] // #0a0d14 Deep Obsidian
+#define THEME_CARD_BG     [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.98] // #141c2e Dark Frosted Glass Card
+#define THEME_CARD_BORDER [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:0.35] // #6366f1 Glowing Indigo Border
+#define THEME_ACCENT      [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:1.0] // #6366f1 Neon Indigo
+#define THEME_TEXT_WHITE  [UIColor colorWithRed:0.97 green:0.98 blue:0.99 alpha:1.0] // #f8fafc Clean Crisp White
+#define THEME_TEXT_MUTED  [UIColor colorWithRed:0.58 green:0.64 blue:0.72 alpha:1.0] // #94a3b8 Slate Muted
+#define THEME_RED_DANGER  [UIColor colorWithRed:0.95 green:0.25 blue:0.25 alpha:1.0] // #ef4444 Danger Red
 
 // ==========================================
 // Keychain & Storage Helpers
@@ -59,141 +60,203 @@
 @end
 
 // ==========================================
-// Dynamic System-Level Theme Engine (UIColor Swizzles)
+// Real-Time View Theme Styler
 // ==========================================
-static void SwizzleClassMethod(Class cls, SEL origSel, SEL newSel) {
-    Method origMethod = class_getClassMethod(cls, origSel);
-    Method newMethod = class_getClassMethod(cls, newSel);
+@interface CyberThemeManager : NSObject
++ (void)applyThemeToView:(UIView *)view;
+@end
+
+@implementation CyberThemeManager
+
++ (void)applyThemeToView:(UIView *)view {
+    if (!view) return;
+    if ([NSStringFromClass([view class]) containsString:@"AuthGate"]) return;
+    
+    // 1. Root Screens & Scrollable Canvases -> Deep Obsidian #0a0d14
+    if ([view isKindOfClass:[UIScrollView class]] || 
+        [view isKindOfClass:[UITableView class]] || 
+        [view isKindOfClass:[UICollectionView class]] ||
+        view.superview == nil ||
+        [view.superview isKindOfClass:[UIWindow class]]) {
+        view.backgroundColor = THEME_BG;
+    }
+    
+    // 2. Labels -> White & Bold for features, Slate for metadata
+    if ([view isKindOfClass:[UILabel class]]) {
+        UILabel *lbl = (UILabel *)view;
+        NSString *txt = lbl.text ?: @"";
+        
+        if ([txt isEqualToString:@"Logout"]) {
+            lbl.textColor = THEME_RED_DANGER;
+            lbl.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
+        } else if ([txt isEqualToString:@"Exploit"] || [txt isEqualToString:@"No Exploit"] || [txt isEqualToString:@"Account"]) {
+            lbl.textColor = THEME_TEXT_WHITE;
+            lbl.font = [UIFont systemFontOfSize:24 weight:UIFontWeightHeavy];
+        } else if ([txt containsString:@"no target file"] || [txt containsString:@"shows your key"] || [txt containsString:@"diagnostics and support"] || [txt containsString:@"patch bytes"]) {
+            lbl.textColor = THEME_TEXT_MUTED;
+        } else if ([txt isEqualToString:@"Lifetime"] || [txt isEqualToString:@"No"] || [txt containsString:@"iPhone"] || [txt containsString:@"iOS"] || [txt containsString:@"%"]) {
+            lbl.textColor = [UIColor colorWithRed:0.75 green:0.80 blue:0.95 alpha:1.0];
+            lbl.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
+        } else {
+            // "Drag", "100% Body", "95% Body", "Maggic Bullet", "ModChest", "Package Name", "Key", "Device Name", etc.
+            lbl.textColor = THEME_TEXT_WHITE;
+            lbl.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
+        }
+    }
+    
+    // 3. Switches -> Neon Indigo Active + Parent Card Theming
+    if ([view isKindOfClass:[UISwitch class]]) {
+        UISwitch *sw = (UISwitch *)view;
+        sw.onTintColor = THEME_ACCENT;
+        sw.thumbTintColor = [UIColor whiteColor];
+        
+        // Style the row card containing this switch
+        UIView *parent = sw.superview;
+        if (parent && ![parent isKindOfClass:[UIScrollView class]]) {
+            parent.backgroundColor = THEME_CARD_BG;
+            parent.layer.cornerRadius = 14;
+            parent.layer.borderColor = THEME_CARD_BORDER.CGColor;
+            parent.layer.borderWidth = 1.0;
+            parent.layer.masksToBounds = YES;
+        }
+    }
+    
+    // 4. White / Light Cards (Status Box, Toggle Rows, Table Cells) -> Dark Cyber Card
+    if (![view isKindOfClass:[UIScrollView class]] && ![view isKindOfClass:[UIWindow class]]) {
+        CGFloat r = 0, g = 0, b = 0, a = 0;
+        if (view.backgroundColor && [view.backgroundColor getRed:&r green:&g blue:&b alpha:&a]) {
+            if (a > 0.1 && (r > 0.70 && g > 0.70 && b > 0.70)) { // Any white/light container
+                view.backgroundColor = THEME_CARD_BG;
+                view.layer.cornerRadius = 14;
+                view.layer.borderColor = THEME_CARD_BORDER.CGColor;
+                view.layer.borderWidth = 1.0;
+                view.layer.masksToBounds = YES;
+            }
+        }
+    }
+    
+    // 5. Table Cells (Account page rows)
+    if ([view isKindOfClass:[UITableViewCell class]]) {
+        UITableViewCell *cell = (UITableViewCell *)view;
+        cell.backgroundColor = THEME_CARD_BG;
+        cell.contentView.backgroundColor = THEME_CARD_BG;
+        cell.layer.cornerRadius = 14;
+        cell.layer.borderColor = THEME_CARD_BORDER.CGColor;
+        cell.layer.borderWidth = 1.0;
+        cell.layer.masksToBounds = YES;
+    }
+    
+    // 6. Segmented Controls ("Free Fire | Free Fire MAX", "Aim | Visuals")
+    if ([view isKindOfClass:[UISegmentedControl class]]) {
+        UISegmentedControl *sc = (UISegmentedControl *)view;
+        sc.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.95];
+        sc.selectedSegmentTintColor = THEME_ACCENT;
+        sc.layer.cornerRadius = 10;
+        sc.layer.borderColor = THEME_CARD_BORDER.CGColor;
+        sc.layer.borderWidth = 1.0;
+        sc.layer.masksToBounds = YES;
+        [sc setTitleTextAttributes:@{NSForegroundColorAttributeName: THEME_TEXT_WHITE, NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightBold]} forState:UIControlStateSelected];
+        [sc setTitleTextAttributes:@{NSForegroundColorAttributeName: THEME_TEXT_MUTED, NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightMedium]} forState:UIControlStateNormal];
+    }
+    
+    // 7. Buttons (START, STOP, Reset, Logout)
+    if ([view isKindOfClass:[UIButton class]]) {
+        UIButton *btn = (UIButton *)view;
+        NSString *title = [btn titleForState:UIControlStateNormal] ?: @"";
+        
+        if ([title isEqualToString:@"START"]) {
+            btn.backgroundColor = THEME_ACCENT;
+            [btn setTitleColor:THEME_TEXT_WHITE forState:UIControlStateNormal];
+            btn.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
+            btn.layer.cornerRadius = 10;
+            btn.layer.shadowColor = THEME_ACCENT.CGColor;
+            btn.layer.shadowOffset = CGSizeMake(0, 4);
+            btn.layer.shadowRadius = 8;
+            btn.layer.shadowOpacity = 0.4;
+        } else if ([title isEqualToString:@"STOP"]) {
+            btn.backgroundColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.25 alpha:0.25];
+            [btn setTitleColor:[UIColor colorWithRed:1.0 green:0.4 blue:0.4 alpha:1.0] forState:UIControlStateNormal];
+            btn.layer.borderColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.25 alpha:0.5].CGColor;
+            btn.layer.borderWidth = 1.0;
+            btn.layer.cornerRadius = 10;
+        } else if ([title isEqualToString:@"Reset"]) {
+            btn.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.85];
+            [btn setTitleColor:THEME_ACCENT forState:UIControlStateNormal];
+            btn.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
+            btn.layer.borderColor = THEME_CARD_BORDER.CGColor;
+            btn.layer.borderWidth = 1.0;
+            btn.layer.cornerRadius = 10;
+        } else if ([title isEqualToString:@"Logout"]) {
+            [btn setTitleColor:THEME_RED_DANGER forState:UIControlStateNormal];
+            btn.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
+        }
+    }
+    
+    // 8. Tab Bar (Bottom navigation bar)
+    if ([view isKindOfClass:[UITabBar class]]) {
+        UITabBar *tb = (UITabBar *)view;
+        tb.barTintColor = THEME_BG;
+        tb.backgroundColor = THEME_BG;
+        tb.tintColor = THEME_ACCENT;
+        tb.unselectedItemTintColor = THEME_TEXT_MUTED;
+        tb.layer.borderColor = [UIColor colorWithRed:0.2 green:0.25 blue:0.35 alpha:0.3].CGColor;
+        tb.layer.borderWidth = 0.5;
+        
+        UITabBarAppearance *tabApp = [[UITabBarAppearance alloc] init];
+        [tabApp configureWithOpaqueBackground];
+        tabApp.backgroundColor = THEME_BG;
+        tabApp.stackedLayoutAppearance.normal.iconColor = THEME_TEXT_MUTED;
+        tabApp.stackedLayoutAppearance.normal.titleTextAttributes = @{NSForegroundColorAttributeName: THEME_TEXT_MUTED};
+        tabApp.stackedLayoutAppearance.selected.iconColor = THEME_ACCENT;
+        tabApp.stackedLayoutAppearance.selected.titleTextAttributes = @{NSForegroundColorAttributeName: THEME_ACCENT, NSFontAttributeName: [UIFont systemFontOfSize:10 weight:UIFontWeightBold]};
+        
+        tb.standardAppearance = tabApp;
+        if (@available(iOS 15.0, *)) {
+            tb.scrollEdgeAppearance = tabApp;
+        }
+    }
+}
+
+@end
+
+// ==========================================
+// Method Swizzling on UIView layoutSubviews
+// ==========================================
+static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
+    Method origMethod = class_getInstanceMethod(cls, origSel);
+    Method newMethod = class_getInstanceMethod(cls, newSel);
     if (!origMethod || !newMethod) return;
     
-    Class metaClass = object_getClass((id)cls);
-    BOOL didAdd = class_addMethod(metaClass, origSel, method_getImplementation(newMethod), method_getTypeEncoding(newMethod));
+    BOOL didAdd = class_addMethod(cls, origSel, method_getImplementation(newMethod), method_getTypeEncoding(newMethod));
     if (didAdd) {
-        class_replaceMethod(metaClass, newSel, method_getImplementation(origMethod), method_getTypeEncoding(origMethod));
+        class_replaceMethod(cls, newSel, method_getImplementation(origMethod), method_getTypeEncoding(origMethod));
     } else {
         method_exchangeImplementations(origMethod, newMethod);
     }
 }
 
-@interface UIColor (CyberpunkTheme)
+@interface UIView (CyberThemeHook)
 @end
 
-@implementation UIColor (CyberpunkTheme)
+@implementation UIView (CyberThemeHook)
 
-+ (UIColor *)cyber_systemBackgroundColor {
-    return COLOR_OBSIDIAN_BG;
-}
-
-+ (UIColor *)cyber_systemGroupedBackgroundColor {
-    return COLOR_OBSIDIAN_BG;
-}
-
-+ (UIColor *)cyber_secondarySystemBackgroundColor {
-    return COLOR_DARK_CARD;
-}
-
-+ (UIColor *)cyber_secondarySystemGroupedBackgroundColor {
-    return COLOR_DARK_CARD;
-}
-
-+ (UIColor *)cyber_tertiarySystemBackgroundColor {
-    return COLOR_DARK_CARD_ALT;
-}
-
-+ (UIColor *)cyber_tertiarySystemGroupedBackgroundColor {
-    return COLOR_DARK_CARD_ALT;
-}
-
-+ (UIColor *)cyber_labelColor {
-    return COLOR_WHITE_TEXT;
-}
-
-+ (UIColor *)cyber_secondaryLabelColor {
-    return COLOR_SLATE_MUTED;
-}
-
-+ (UIColor *)cyber_systemBlueColor {
-    return COLOR_NEON_INDIGO;
+- (void)cyber_layoutSubviews {
+    [self cyber_layoutSubviews];
+    [CyberThemeManager applyThemeToView:self];
 }
 
 @end
 
-@interface AppThemeSetup : NSObject
-+ (void)installTheme;
+@interface ThemeBootstrap : NSObject
++ (void)start;
 @end
 
-@implementation AppThemeSetup
+@implementation ThemeBootstrap
 
-+ (void)installTheme {
++ (void)start {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        // 1. Swizzle UIColor system colors
-        Class uiColorClass = [UIColor class];
-        SwizzleClassMethod(uiColorClass, @selector(systemBackgroundColor), @selector(cyber_systemBackgroundColor));
-        SwizzleClassMethod(uiColorClass, @selector(systemGroupedBackgroundColor), @selector(cyber_systemGroupedBackgroundColor));
-        SwizzleClassMethod(uiColorClass, @selector(secondarySystemBackgroundColor), @selector(cyber_secondarySystemBackgroundColor));
-        SwizzleClassMethod(uiColorClass, @selector(secondarySystemGroupedBackgroundColor), @selector(cyber_secondarySystemGroupedBackgroundColor));
-        SwizzleClassMethod(uiColorClass, @selector(tertiarySystemBackgroundColor), @selector(cyber_tertiarySystemBackgroundColor));
-        SwizzleClassMethod(uiColorClass, @selector(tertiarySystemGroupedBackgroundColor), @selector(cyber_tertiarySystemGroupedBackgroundColor));
-        SwizzleClassMethod(uiColorClass, @selector(labelColor), @selector(cyber_labelColor));
-        SwizzleClassMethod(uiColorClass, @selector(secondaryLabelColor), @selector(cyber_secondaryLabelColor));
-        SwizzleClassMethod(uiColorClass, @selector(systemBlueColor), @selector(cyber_systemBlueColor));
-        
-        // 2. Global Appearances for UIKit controls
-        dispatch_async(dispatch_get_main_queue(), ^{
-            // Tab Bar
-            UITabBarAppearance *tabApp = [[UITabBarAppearance alloc] init];
-            [tabApp configureWithOpaqueBackground];
-            tabApp.backgroundColor = COLOR_OBSIDIAN_BG;
-            
-            tabApp.stackedLayoutAppearance.normal.iconColor = COLOR_SLATE_MUTED;
-            tabApp.stackedLayoutAppearance.normal.titleTextAttributes = @{
-                NSForegroundColorAttributeName: COLOR_SLATE_MUTED,
-                NSFontAttributeName: [UIFont systemFontOfSize:10 weight:UIFontWeightMedium]
-            };
-            
-            tabApp.stackedLayoutAppearance.selected.iconColor = COLOR_NEON_INDIGO;
-            tabApp.stackedLayoutAppearance.selected.titleTextAttributes = @{
-                NSForegroundColorAttributeName: COLOR_NEON_INDIGO,
-                NSFontAttributeName: [UIFont systemFontOfSize:10 weight:UIFontWeightBold]
-            };
-            
-            [UITabBar appearance].standardAppearance = tabApp;
-            if (@available(iOS 15.0, *)) {
-                [UITabBar appearance].scrollEdgeAppearance = tabApp;
-            }
-            [UITabBar appearance].tintColor = COLOR_NEON_INDIGO;
-            [UITabBar appearance].barTintColor = COLOR_OBSIDIAN_BG;
-            [UITabBar appearance].backgroundColor = COLOR_OBSIDIAN_BG;
-            
-            // Navigation Bar
-            UINavigationBarAppearance *navApp = [[UINavigationBarAppearance alloc] init];
-            [navApp configureWithOpaqueBackground];
-            navApp.backgroundColor = COLOR_OBSIDIAN_BG;
-            navApp.titleTextAttributes = @{NSForegroundColorAttributeName: COLOR_WHITE_TEXT};
-            navApp.largeTitleTextAttributes = @{NSForegroundColorAttributeName: COLOR_WHITE_TEXT};
-            
-            [UINavigationBar appearance].standardAppearance = navApp;
-            if (@available(iOS 15.0, *)) {
-                [UINavigationBar appearance].scrollEdgeAppearance = navApp;
-            }
-            [UINavigationBar appearance].tintColor = COLOR_NEON_INDIGO;
-            [UINavigationBar appearance].barTintColor = COLOR_OBSIDIAN_BG;
-            
-            // Switches & Tables
-            [UISwitch appearance].onTintColor = COLOR_NEON_INDIGO;
-            [UISwitch appearance].thumbTintColor = [UIColor whiteColor];
-            
-            [UITableView appearance].backgroundColor = COLOR_OBSIDIAN_BG;
-            [UITableView appearance].separatorColor = [UIColor colorWithRed:0.2 green:0.25 blue:0.35 alpha:0.3];
-            [UITableViewCell appearance].backgroundColor = COLOR_DARK_CARD;
-            
-            // Segmented Controls
-            [UISegmentedControl appearance].backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.95];
-            [UISegmentedControl appearance].selectedSegmentTintColor = COLOR_NEON_INDIGO;
-            [[UISegmentedControl appearance] setTitleTextAttributes:@{NSForegroundColorAttributeName: COLOR_WHITE_TEXT, NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightBold]} forState:UIControlStateSelected];
-            [[UISegmentedControl appearance] setTitleTextAttributes:@{NSForegroundColorAttributeName: COLOR_SLATE_MUTED, NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightMedium]} forState:UIControlStateNormal];
-        });
+        SwizzleInstanceMethod([UIView class], @selector(layoutSubviews), @selector(cyber_layoutSubviews));
     });
 }
 
@@ -484,7 +547,7 @@ static void SwizzleClassMethod(Class cls, SEL origSel, SEL newSel) {
 
 - (void)startAuthGate {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [AppThemeSetup installTheme];
+        [ThemeBootstrap start];
         
         UIScreen *mainScreen = [UIScreen mainScreen];
         self.authWindow = [[UIWindow alloc] initWithFrame:mainScreen.bounds];
@@ -525,7 +588,7 @@ static void SwizzleClassMethod(Class cls, SEL origSel, SEL newSel) {
 // ==========================================
 __attribute__((constructor))
 static void InitAuthGate() {
-    [AppThemeSetup installTheme];
+    [ThemeBootstrap start];
     
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
                                                       object:nil
