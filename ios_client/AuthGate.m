@@ -632,26 +632,16 @@ static inline NSString *GET_SUPPORT_URL(void) {
     return [AuthStorage getStringForKey:KEYCHAIN_KEY] ?: @"";
 }
 
-- (void)hook_fluck_markGatePassed {
-}
-
-- (void)hook_fluck_refreshExpiryFromServer {
-}
-
-- (void)hook_fluck_startHeartbeat {
-}
-
-- (void)hook_fluck_startKeyWatchdog {
-}
-
-- (void)hook_fluck_revokeGateWithReason:(id)reason {
-}
-
-- (void)hook_fluck_revokeAndDie:(id)arg1 label:(id)arg2 {
-}
-
-- (void)hook_fluck_failAndDie:(id)arg1 {
-}
+- (void)hook_fluck_markGatePassed {}
+- (void)hook_fluck_refreshExpiryFromServer {}
+- (void)hook_fluck_startHeartbeat {}
+- (void)hook_fluck_startKeyWatchdog {}
+- (void)hook_fluck_startGate {}
+- (void)hook_fluck_beginGate {}
+- (void)hook_fluck_verifySavedKeyAndPassWithCompletion:(id)comp {}
+- (void)hook_fluck_revokeGateWithReason:(id)reason {}
+- (void)hook_fluck_revokeAndDie:(id)arg1 label:(id)arg2 {}
+- (void)hook_fluck_failAndDie:(id)arg1 {}
 
 @end
 
@@ -667,41 +657,11 @@ static inline NSString *GET_SUPPORT_URL(void) {
     return [LiveSecurityGuard isSessionAuthorized];
 }
 
-- (void)hook_root_showActivationCard {
-    if ([LiveSecurityGuard isSessionAuthorized]) {
-        return; // Suppress activation card when logged in
-    }
-    [self hook_root_showActivationCard];
-}
-
-- (void)hook_root_showActivationCardWithError:(id)err {
-    if ([LiveSecurityGuard isSessionAuthorized]) {
-        return; // Suppress activation card error modal when logged in
-    }
-    [self hook_root_showActivationCardWithError:err];
-}
-
-- (void)hook_root_presentAsModal {
-    if ([LiveSecurityGuard isSessionAuthorized]) {
-        return;
-    }
-    [self hook_root_presentAsModal];
-}
-
-- (void)hook_root_beginGate {
-    if ([LiveSecurityGuard isSessionAuthorized]) {
-        return;
-    }
-    [self hook_root_beginGate];
-}
-
-- (void)hook_root_startGate {
-    if ([LiveSecurityGuard isSessionAuthorized]) {
-        return;
-    }
-    [self hook_root_startGate];
-}
-
+- (void)hook_root_showActivationCard {}
+- (void)hook_root_showActivationCardWithError:(id)err {}
+- (void)hook_root_presentAsModal {}
+- (void)hook_root_beginGate {}
+- (void)hook_root_startGate {}
 - (void)hook_root_finishGate {
     [self hook_root_finishGate];
 }
@@ -714,27 +674,35 @@ static inline NSString *GET_SUPPORT_URL(void) {
 @implementation UIViewController (FluckAuthVCHooks)
 
 - (void)hook_fluckVC_viewDidLoad {
-    [self hook_fluckVC_viewDidLoad];
-    if ([LiveSecurityGuard isSessionAuthorized]) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self dismissViewControllerAnimated:NO completion:nil];
-            if (self.view.superview) {
-                [self.view removeFromSuperview];
-            }
-        });
-    }
+    // Suppress legacy card UI setup entirely
 }
 
 - (void)hook_fluckVC_viewWillAppear:(BOOL)animated {
-    [self hook_fluckVC_viewWillAppear:animated];
-    if ([LiveSecurityGuard isSessionAuthorized]) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self dismissViewControllerAnimated:NO completion:nil];
-            if (self.view.superview) {
-                [self.view removeFromSuperview];
-            }
-        });
-    }
+    // Suppress legacy card UI
+}
+
+- (void)hook_fluckVC_viewDidAppear:(BOOL)animated {
+    // Suppress legacy card UI
+}
+
+- (void)hook_fluckVC_buildUI {
+    // Drop building old UI views
+}
+
+- (void)hook_fluckVC_beginGate {
+    // Drop old network gate verification
+}
+
+- (void)hook_fluckVC_showActivationCard {
+    // Suppress legacy activation card
+}
+
+- (void)hook_fluckVC_showActivationCardWithError:(id)err {
+    // Suppress legacy activation card error
+}
+
+- (BOOL)hook_fluckVC_gateDone {
+    return [LiveSecurityGuard isSessionAuthorized];
 }
 
 @end
@@ -1127,6 +1095,9 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
             SwizzleMethod(fluckClass, @selector(refreshExpiryFromServer), @selector(hook_fluck_refreshExpiryFromServer));
             SwizzleMethod(fluckClass, @selector(startHeartbeat), @selector(hook_fluck_startHeartbeat));
             SwizzleMethod(fluckClass, @selector(startKeyWatchdog), @selector(hook_fluck_startKeyWatchdog));
+            SwizzleMethod(fluckClass, @selector(startGate), @selector(hook_fluck_startGate));
+            SwizzleMethod(fluckClass, @selector(beginGate), @selector(hook_fluck_beginGate));
+            SwizzleMethod(fluckClass, @selector(verifySavedKeyAndPassWithCompletion:), @selector(hook_fluck_verifySavedKeyAndPassWithCompletion:));
             SwizzleMethod(fluckClass, @selector(revokeGateWithReason:), @selector(hook_fluck_revokeGateWithReason:));
             SwizzleMethod(fluckClass, @selector(revokeAndDie:label:), @selector(hook_fluck_revokeAndDie:label:));
             SwizzleMethod(fluckClass, @selector(failAndDie:), @selector(hook_fluck_failAndDie:));
@@ -1169,6 +1140,12 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
         if (fluckVCClass) {
             SwizzleMethod(fluckVCClass, @selector(viewDidLoad), @selector(hook_fluckVC_viewDidLoad));
             SwizzleMethod(fluckVCClass, @selector(viewWillAppear:), @selector(hook_fluckVC_viewWillAppear:));
+            SwizzleMethod(fluckVCClass, @selector(viewDidAppear:), @selector(hook_fluckVC_viewDidAppear:));
+            SwizzleMethod(fluckVCClass, @selector(buildUI), @selector(hook_fluckVC_buildUI));
+            SwizzleMethod(fluckVCClass, @selector(beginGate), @selector(hook_fluckVC_beginGate));
+            SwizzleMethod(fluckVCClass, @selector(showActivationCard), @selector(hook_fluckVC_showActivationCard));
+            SwizzleMethod(fluckVCClass, @selector(showActivationCardWithError:), @selector(hook_fluckVC_showActivationCardWithError:));
+            SwizzleMethod(fluckVCClass, @selector(gateDone), @selector(hook_fluckVC_gateDone));
         }
     });
 }
@@ -1489,13 +1466,8 @@ static BOOL g_sessionAuthorizedInMemory = NO;
     [req setTimeoutInterval:10.0];
     
     NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData * _Nullable resData, NSURLResponse * _Nullable response, NSError * _Nullable netErr) {
+        // If network error / socket timeout during background or resume, ignore without dropping authorization
         if (netErr || !resData) {
-            if ([UIApplication sharedApplication].applicationState == UIApplicationStateActive) {
-                guard.consecutiveFailures++;
-                if (guard.consecutiveFailures >= 5) {
-                    [self enforceLockdownWithReason:@"Server connection lost. Realtime internet connection required."];
-                }
-            }
             return;
         }
         
@@ -1863,7 +1835,6 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 }
 
 - (void)showAuthWindowWithError:(NSString *)errorReason {
-    
     if (!self.authWindow) {
         UIScreen *mainScreen = [UIScreen mainScreen];
         self.authWindow = [[UIWindow alloc] initWithFrame:mainScreen.bounds];
@@ -1877,22 +1848,37 @@ static BOOL g_sessionAuthorizedInMemory = NO;
         [UIView animateWithDuration:0.3 animations:^{
             weakSelf.authWindow.alpha = 0.0;
         } completion:^(BOOL finished) {
+            weakSelf.authWindow.hidden = YES;
+            weakSelf.authWindow.rootViewController = nil;
+            weakSelf.authWindow = nil;
+            
+            // Find the main app window
             UIWindow *appWindow = nil;
             for (UIWindow *w in [UIApplication sharedApplication].windows) {
-                if (w != weakSelf.authWindow && !w.hidden) {
+                if (w != weakSelf.authWindow) {
                     appWindow = w;
                     break;
                 }
             }
+            if (!appWindow) {
+                appWindow = [UIApplication sharedApplication].keyWindow;
+            }
+            
             if (appWindow) {
+                // Completely replace FluckAuthViewController with RootViewController
+                Class rootVCClass = objc_getClass("RootViewController");
+                if (rootVCClass) {
+                    UIViewController *existing = appWindow.rootViewController;
+                    if (!existing || ![existing isKindOfClass:rootVCClass]) {
+                        UIViewController *newRoot = [[rootVCClass alloc] init];
+                        appWindow.rootViewController = newRoot;
+                    }
+                }
                 [appWindow makeKeyAndVisible];
                 if (appWindow.rootViewController) {
                     [MainMenuThemeEngine styleViewController:appWindow.rootViewController];
                 }
             }
-            weakSelf.authWindow.hidden = YES;
-            weakSelf.authWindow.rootViewController = nil;
-            weakSelf.authWindow = nil;
         }];
     };
     
@@ -1909,6 +1895,10 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 // ==========================================
 __attribute__((constructor))
 static void InitAuthGate() {
+    // 1. Install all swizzles & neutralizations immediately before App Delegate runs
+    [UIViewController installThemeHooks];
+    
+    // 2. Present AuthGate UI once application finishes launching
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
                                                       object:nil
                                                        queue:[NSOperationQueue mainQueue]
