@@ -1,7 +1,6 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <Security/Security.h>
-#import <objc/runtime.h>
 
 // ==========================================
 // Configurable Settings
@@ -12,15 +11,6 @@
 #define SUPPORT_URL @"https://t.me/your_telegram_channel"
 #define KEYCHAIN_KEY @"com.proxyvn.auth.license_key"
 #define KEYCHAIN_HWID @"com.proxyvn.auth.device_hwid"
-
-// Exact Theme Palette
-#define THEME_BG          [UIColor colorWithRed:0.04 green:0.05 blue:0.08 alpha:1.0] // #0a0d14 Deep Obsidian
-#define THEME_CARD_BG     [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.98] // #141c2e Dark Frosted Card
-#define THEME_CARD_BORDER [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:0.35] // #6366f1 Glowing Indigo Border
-#define THEME_ACCENT      [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:1.0] // #6366f1 Neon Indigo
-#define THEME_TEXT_WHITE  [UIColor colorWithRed:0.97 green:0.98 blue:0.99 alpha:1.0] // #f8fafc Clean Crisp White
-#define THEME_TEXT_MUTED  [UIColor colorWithRed:0.58 green:0.64 blue:0.72 alpha:1.0] // #94a3b8 Slate Muted
-#define THEME_RED_DANGER  [UIColor colorWithRed:0.95 green:0.25 blue:0.25 alpha:1.0] // #ef4444 Danger Red
 
 // ==========================================
 // Keychain & Storage Helpers
@@ -60,289 +50,7 @@
 @end
 
 // ==========================================
-// Method Swizzling Utility
-// ==========================================
-static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
-    if (!cls) return;
-    Method origMethod = class_getInstanceMethod(cls, origSel);
-    Method newMethod = class_getInstanceMethod(cls, newSel);
-    if (!origMethod || !newMethod) return;
-    
-    BOOL didAdd = class_addMethod(cls, origSel, method_getImplementation(newMethod), method_getTypeEncoding(newMethod));
-    if (didAdd) {
-        class_replaceMethod(cls, newSel, method_getImplementation(origMethod), method_getTypeEncoding(origMethod));
-    } else {
-        method_exchangeImplementations(origMethod, newMethod);
-    }
-}
-
-// ==========================================
-// Neutralize ActivationCard & Internal Gate
-// ==========================================
-static BOOL g_isAuthenticated = NO;
-
-@interface NSObject (ActivationCardInstanceHooks)
-- (void)hook_showActivationCard;
-- (void)hook_showActivationCardWithError:(id)arg1;
-- (void)hook_buildUI;
-- (BOOL)hook_gateDone;
-- (UIView *)hook_activateGlass;
-@end
-@implementation NSObject (ActivationCardInstanceHooks)
-
-- (void)hook_showActivationCard {
-    // Completely suppress original activation card popup
-}
-
-- (void)hook_showActivationCardWithError:(id)arg1 {
-    // Completely suppress original activation error popup
-}
-
-- (void)hook_buildUI {
-    // Suppress creation of the full-screen _activateGlass blackout overlay
-}
-
-- (BOOL)hook_gateDone {
-    return YES;
-}
-
-- (UIView *)hook_activateGlass {
-    return nil;
-}
-
-@end
-
-// ==========================================
-// Precision Theme Hooks for ProxyVN UI
-// ==========================================
-
-// 1. Hook MenuSwitchItem (Drag, 100% Body, 95% Body, Maggic Bullet, ModChest)
-@interface UIView (MenuSwitchItemHook)
-@end
-
-@implementation UIView (MenuSwitchItemHook)
-
-- (instancetype)hook_initMenuSwitchItemWithFrame:(CGRect)frame {
-    UIView *item = [self hook_initMenuSwitchItemWithFrame:frame];
-    if (item) {
-        item.backgroundColor = THEME_CARD_BG;
-        item.layer.cornerRadius = 14;
-        item.layer.borderColor = THEME_CARD_BORDER.CGColor;
-        item.layer.borderWidth = 1.0;
-    }
-    return item;
-}
-
-@end
-
-// 2. Hook UILabel setText to guarantee crisp white text on feature rows
-@interface UILabel (WhiteTextHook)
-@end
-
-@implementation UILabel (WhiteTextHook)
-
-- (void)hook_setText:(NSString *)text {
-    [self hook_setText:text];
-    if (!text || [NSStringFromClass([self class]) containsString:@"AuthGate"]) return;
-    
-    if ([text isEqualToString:@"Logout"]) {
-        self.textColor = THEME_RED_DANGER;
-        self.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
-    } else if ([text isEqualToString:@"Exploit"] || [text isEqualToString:@"No Exploit"] || [text isEqualToString:@"Account"]) {
-        self.textColor = THEME_TEXT_WHITE;
-        self.font = [UIFont systemFontOfSize:24 weight:UIFontWeightHeavy];
-    } else if ([text containsString:@"no target file"] || [text containsString:@"shows your key"] || [text containsString:@"diagnostics and support"] || [text containsString:@"patch bytes"]) {
-        self.textColor = THEME_TEXT_MUTED;
-    } else if ([text isEqualToString:@"Lifetime"] || [text isEqualToString:@"No"] || [text containsString:@"iPhone"] || [text containsString:@"iOS"] || [text containsString:@"%"]) {
-        self.textColor = [UIColor colorWithRed:0.75 green:0.80 blue:0.95 alpha:1.0];
-    } else if ([text isEqualToString:@"Drag"] || [text isEqualToString:@"100% Body"] || [text isEqualToString:@"95% Body"] || [text isEqualToString:@"Maggic Bullet"] || [text isEqualToString:@"ModChest"] || [text isEqualToString:@"Package Name"] || [text isEqualToString:@"Key"] || [text isEqualToString:@"Device Name"] || [text isEqualToString:@"Device Model"] || [text isEqualToString:@"iOS Version"] || [text isEqualToString:@"Battery Info"] || [text isEqualToString:@"Jailbreak"]) {
-        self.textColor = THEME_TEXT_WHITE;
-        self.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
-    }
-}
-
-@end
-
-// 3. Hook UISwitch to style switch and its container card
-@interface UISwitch (ThemeHook)
-@end
-
-@implementation UISwitch (ThemeHook)
-
-- (void)hook_switchDidMoveToSuperview {
-    [self hook_switchDidMoveToSuperview];
-    self.onTintColor = THEME_ACCENT;
-    self.thumbTintColor = [UIColor whiteColor];
-    
-    UIView *p = self.superview;
-    if (p && ![p isKindOfClass:[UIScrollView class]] && ![p isKindOfClass:[UITableView class]]) {
-        p.backgroundColor = THEME_CARD_BG;
-        p.layer.cornerRadius = 14;
-        p.layer.borderColor = THEME_CARD_BORDER.CGColor;
-        p.layer.borderWidth = 1.0;
-    }
-}
-
-@end
-
-// 4. Hook UIViewController viewDidLoad for Background & TabBar
-@interface UIViewController (ExploitVCHook)
-@end
-
-@implementation UIViewController (ExploitVCHook)
-
-- (void)hook_viewDidLoad {
-    [self hook_viewDidLoad];
-    
-    NSString *clsName = NSStringFromClass([self class]);
-    if ([clsName containsString:@"AuthGate"]) return;
-    
-    self.view.backgroundColor = THEME_BG;
-    
-    if (self.tabBarController) {
-        UITabBar *tb = self.tabBarController.tabBar;
-        tb.barTintColor = THEME_BG;
-        tb.backgroundColor = THEME_BG;
-        tb.tintColor = THEME_ACCENT;
-        tb.unselectedItemTintColor = THEME_TEXT_MUTED;
-        tb.layer.borderColor = [UIColor colorWithRed:0.2 green:0.25 blue:0.35 alpha:0.3].CGColor;
-        tb.layer.borderWidth = 0.5;
-        
-        UITabBarAppearance *tabApp = [[UITabBarAppearance alloc] init];
-        [tabApp configureWithOpaqueBackground];
-        tabApp.backgroundColor = THEME_BG;
-        tabApp.stackedLayoutAppearance.normal.iconColor = THEME_TEXT_MUTED;
-        tabApp.stackedLayoutAppearance.normal.titleTextAttributes = @{NSForegroundColorAttributeName: THEME_TEXT_MUTED};
-        tabApp.stackedLayoutAppearance.selected.iconColor = THEME_ACCENT;
-        tabApp.stackedLayoutAppearance.selected.titleTextAttributes = @{NSForegroundColorAttributeName: THEME_ACCENT, NSFontAttributeName: [UIFont systemFontOfSize:10 weight:UIFontWeightBold]};
-        
-        tb.standardAppearance = tabApp;
-        if (@available(iOS 15.0, *)) {
-            tb.scrollEdgeAppearance = tabApp;
-        }
-    }
-}
-
-@end
-
-// 5. Hook UITableViewCell for Account Tab
-@interface UITableViewCell (AccountCellHook)
-@end
-
-@implementation UITableViewCell (AccountCellHook)
-
-- (instancetype)hook_initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier {
-    UITableViewCell *cell = [self hook_initWithStyle:style reuseIdentifier:reuseIdentifier];
-    if (cell) {
-        cell.backgroundColor = THEME_CARD_BG;
-        cell.contentView.backgroundColor = THEME_CARD_BG;
-        cell.layer.cornerRadius = 12;
-        cell.layer.borderColor = THEME_CARD_BORDER.CGColor;
-        cell.layer.borderWidth = 0.8;
-    }
-    return cell;
-}
-
-@end
-
-// 6. Hook UIButton for START / STOP / Reset
-@interface UIButton (ButtonThemeHook)
-@end
-
-@implementation UIButton (ButtonThemeHook)
-
-- (void)hook_setTitle:(NSString *)title forState:(UIControlState)state {
-    [self hook_setTitle:title forState:state];
-    if (!title || [NSStringFromClass([self class]) containsString:@"AuthGate"]) return;
-    
-    if ([title isEqualToString:@"START"]) {
-        self.backgroundColor = THEME_ACCENT;
-        [self setTitleColor:THEME_TEXT_WHITE forState:UIControlStateNormal];
-        self.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
-        self.layer.cornerRadius = 10;
-        self.layer.shadowColor = THEME_ACCENT.CGColor;
-        self.layer.shadowOffset = CGSizeMake(0, 4);
-        self.layer.shadowRadius = 8;
-        self.layer.shadowOpacity = 0.4;
-    } else if ([title isEqualToString:@"STOP"]) {
-        self.backgroundColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.25 alpha:0.25];
-        [self setTitleColor:[UIColor colorWithRed:1.0 green:0.4 blue:0.4 alpha:1.0] forState:UIControlStateNormal];
-        self.layer.borderColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.25 alpha:0.5].CGColor;
-        self.layer.borderWidth = 1.0;
-        self.layer.cornerRadius = 10;
-    } else if ([title isEqualToString:@"Reset"]) {
-        self.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.85];
-        [self setTitleColor:THEME_ACCENT forState:UIControlStateNormal];
-        self.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
-        self.layer.borderColor = THEME_CARD_BORDER.CGColor;
-        self.layer.borderWidth = 1.0;
-        self.layer.cornerRadius = 10;
-    } else if ([title isEqualToString:@"Logout"]) {
-        [self setTitleColor:THEME_RED_DANGER forState:UIControlStateNormal];
-        self.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
-    }
-}
-
-@end
-
-// 7. Hook UISegmentedControl
-@interface UISegmentedControl (SegmentThemeHook)
-@end
-
-@implementation UISegmentedControl (SegmentThemeHook)
-
-- (void)hook_segmentDidMoveToSuperview {
-    [self hook_segmentDidMoveToSuperview];
-    self.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.95];
-    self.selectedSegmentTintColor = THEME_ACCENT;
-    self.layer.cornerRadius = 10;
-    self.layer.borderColor = THEME_CARD_BORDER.CGColor;
-    self.layer.borderWidth = 1.0;
-    [self setTitleTextAttributes:@{NSForegroundColorAttributeName: THEME_TEXT_WHITE, NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightBold]} forState:UIControlStateSelected];
-    [self setTitleTextAttributes:@{NSForegroundColorAttributeName: THEME_TEXT_MUTED, NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightMedium]} forState:UIControlStateNormal];
-}
-
-@end
-
-// Master Installer
-@interface TargetedThemeInstaller : NSObject
-+ (void)install;
-@end
-
-@implementation TargetedThemeInstaller
-
-+ (void)install {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        // 1. ActivationCard INSTANCE hooks (prevents _activateGlass overlay and returns gateDone = YES)
-        Class actCardClass = objc_getClass("ActivationCard");
-        if (actCardClass) {
-            SwizzleInstanceMethod(actCardClass, @selector(showActivationCard), @selector(hook_showActivationCard));
-            SwizzleInstanceMethod(actCardClass, @selector(showActivationCardWithError:), @selector(hook_showActivationCardWithError:));
-            SwizzleInstanceMethod(actCardClass, @selector(buildUI), @selector(hook_buildUI));
-            SwizzleInstanceMethod(actCardClass, @selector(gateDone), @selector(hook_gateDone));
-            SwizzleInstanceMethod(actCardClass, @selector(activateGlass), @selector(hook_activateGlass));
-        }
-        
-        // 2. MenuSwitchItem class hook
-        Class switchItemClass = objc_getClass("MenuSwitchItem");
-        if (switchItemClass) {
-            SwizzleInstanceMethod(switchItemClass, @selector(initWithFrame:), @selector(hook_initMenuSwitchItemWithFrame:));
-        }
-        
-        SwizzleInstanceMethod([UILabel class], @selector(setText:), @selector(hook_setText:));
-        SwizzleInstanceMethod([UISwitch class], @selector(didMoveToSuperview), @selector(hook_switchDidMoveToSuperview));
-        SwizzleInstanceMethod([UIViewController class], @selector(viewDidLoad), @selector(hook_viewDidLoad));
-        SwizzleInstanceMethod([UITableViewCell class], @selector(initWithStyle:reuseIdentifier:), @selector(hook_initWithStyle:reuseIdentifier:));
-        SwizzleInstanceMethod([UIButton class], @selector(setTitle:forState:), @selector(hook_setTitle:forState:));
-        SwizzleInstanceMethod([UISegmentedControl class], @selector(didMoveToSuperview), @selector(hook_segmentDidMoveToSuperview));
-    });
-}
-
-@end
-
-// ==========================================
-// Auth Gate View Controller (Modal Style)
+// Auth Gate View Controller
 // ==========================================
 @interface AuthGateViewController : UIViewController <UITextFieldDelegate>
 @property (nonatomic, strong) UITextField *keyTextField;
@@ -360,15 +68,14 @@ static BOOL g_isAuthenticated = NO;
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.view.backgroundColor = [UIColor colorWithRed:0.02 green:0.03 blue:0.05 alpha:0.95];
-    self.view.userInteractionEnabled = YES;
+    self.view.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.85];
     
     UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dismissKeyboard)];
-    tap.cancelsTouchesInView = NO;
     [self.view addGestureRecognizer:tap];
 
     [self setupUI];
     
+    // Auto validate if key exists
     NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
     if (savedKey && savedKey.length > 0) {
         self.keyTextField.text = savedKey;
@@ -381,22 +88,20 @@ static BOOL g_isAuthenticated = NO;
     UIVisualEffectView *blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
     blurView.frame = self.view.bounds;
     blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    blurView.userInteractionEnabled = NO;
     [self.view addSubview:blurView];
     
     CGFloat cardWidth = MIN(self.view.bounds.size.width - 40, 360);
     CGFloat cardHeight = 440;
     
     self.cardView = [[UIView alloc] initWithFrame:CGRectMake((self.view.bounds.size.width - cardWidth)/2, (self.view.bounds.size.height - cardHeight)/2, cardWidth, cardHeight)];
-    self.cardView.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.98];
+    self.cardView.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.95];
     self.cardView.layer.cornerRadius = 20;
-    self.cardView.layer.borderColor = [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:0.35].CGColor;
+    self.cardView.layer.borderColor = [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:0.3].CGColor;
     self.cardView.layer.borderWidth = 1.5;
     self.cardView.layer.shadowColor = [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:0.4].CGColor;
     self.cardView.layer.shadowOffset = CGSizeMake(0, 10);
     self.cardView.layer.shadowRadius = 25;
     self.cardView.layer.shadowOpacity = 0.8;
-    self.cardView.userInteractionEnabled = YES;
     self.cardView.autoresizingMask = UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin | UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
     [self.view addSubview:self.cardView];
     
@@ -442,7 +147,6 @@ static BOOL g_isAuthenticated = NO;
     self.keyTextField.layer.borderWidth = 1.0;
     self.keyTextField.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
     self.keyTextField.autocorrectionType = UITextAutocorrectionTypeNo;
-    self.keyTextField.userInteractionEnabled = YES;
     self.keyTextField.delegate = self;
     self.keyTextField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"ENTER LICENSE KEY" attributes:@{NSForegroundColorAttributeName: [UIColor colorWithWhite:0.4 alpha:1.0]}];
     [self.cardView addSubview:self.keyTextField];
@@ -452,7 +156,6 @@ static BOOL g_isAuthenticated = NO;
     [self.pasteButton setTitle:@"📋 Paste from Clipboard" forState:UIControlStateNormal];
     [self.pasteButton setTitleColor:[UIColor colorWithRed:0.6 green:0.7 blue:1.0 alpha:1.0] forState:UIControlStateNormal];
     self.pasteButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
-    self.pasteButton.userInteractionEnabled = YES;
     [self.pasteButton addTarget:self action:@selector(pasteKeyAction) forControlEvents:UIControlEventTouchUpInside];
     [self.cardView addSubview:self.pasteButton];
     
@@ -475,7 +178,6 @@ static BOOL g_isAuthenticated = NO;
     self.loginButton.layer.shadowOffset = CGSizeMake(0, 4);
     self.loginButton.layer.shadowRadius = 10;
     self.loginButton.layer.shadowOpacity = 0.8;
-    self.loginButton.userInteractionEnabled = YES;
     [self.loginButton addTarget:self action:@selector(loginButtonTapped) forControlEvents:UIControlEventTouchUpInside];
     [self.cardView addSubview:self.loginButton];
     
@@ -490,15 +192,8 @@ static BOOL g_isAuthenticated = NO;
     [self.supportButton setTitle:@"Get Key / Contact Support" forState:UIControlStateNormal];
     [self.supportButton setTitleColor:[UIColor colorWithWhite:0.6 alpha:1.0] forState:UIControlStateNormal];
     self.supportButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightRegular];
-    self.supportButton.userInteractionEnabled = YES;
     [self.supportButton addTarget:self action:@selector(openSupport) forControlEvents:UIControlEventTouchUpInside];
     [self.cardView addSubview:self.supportButton];
-}
-
-- (BOOL)textFieldShouldReturn:(UITextField *)textField {
-    [textField resignFirstResponder];
-    [self loginButtonTapped];
-    return YES;
 }
 
 - (void)dismissKeyboard {
@@ -601,9 +296,7 @@ static BOOL g_isAuthenticated = NO;
                 self.statusLabel.textColor = [UIColor colorWithRed:0.2 green:0.85 blue:0.45 alpha:1.0];
                 self.statusLabel.text = [NSString stringWithFormat:@"Access Granted! (%@)", remainStr];
                 
-                g_isAuthenticated = YES;
-                
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                     if (self.onSuccessBlock) {
                         self.onSuccessBlock();
                     }
@@ -621,58 +314,60 @@ static BOOL g_isAuthenticated = NO;
 @end
 
 // ==========================================
-// Auth Gate Presenter
+// Auth Gate Manager
 // ==========================================
-@interface AuthGatePresenter : NSObject
+@interface AuthGateManager : NSObject
+@property (nonatomic, strong) UIWindow *authWindow;
 + (instancetype)shared;
-- (void)presentGate;
+- (void)startAuthGate;
 @end
 
-@implementation AuthGatePresenter
+@implementation AuthGateManager
 
 + (instancetype)shared {
-    static AuthGatePresenter *inst = nil;
+    static AuthGateManager *inst = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        inst = [[AuthGatePresenter alloc] init];
+        inst = [[AuthGateManager alloc] init];
     });
     return inst;
 }
 
-- (void)presentGate {
+- (void)startAuthGate {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [TargetedThemeInstaller install];
+        UIScreen *mainScreen = [UIScreen mainScreen];
+        self.authWindow = [[UIWindow alloc] initWithFrame:mainScreen.bounds];
+        self.authWindow.windowLevel = UIWindowLevelAlert + 100;
         
-        UIWindow *mainWin = nil;
-        for (UIWindow *w in [UIApplication sharedApplication].windows) {
-            if (!w.hidden && w.rootViewController) {
-                mainWin = w;
-                break;
-            }
-        }
-        
-        if (!mainWin || !mainWin.rootViewController) {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                [self presentGate];
-            });
-            return;
-        }
-        
-        UIViewController *rootVC = mainWin.rootViewController;
-        while (rootVC.presentedViewController) {
-            rootVC = rootVC.presentedViewController;
-        }
-        
-        if ([rootVC isKindOfClass:[AuthGateViewController class]]) return;
-        
-        AuthGateViewController *gateVC = [[AuthGateViewController alloc] init];
-        gateVC.modalPresentationStyle = UIModalPresentationOverFullScreen;
-        gateVC.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
-        gateVC.onSuccessBlock = ^{
-            [gateVC dismissViewControllerAnimated:YES completion:nil];
+        AuthGateViewController *vc = [[AuthGateViewController alloc] init];
+        __weak typeof(self) weakSelf = self;
+        vc.onSuccessBlock = ^{
+            [UIView animateWithDuration:0.4 animations:^{
+                weakSelf.authWindow.alpha = 0.0;
+            } completion:^(BOOL finished) {
+                // Find main app window and restore key focus
+                UIWindow *appWindow = nil;
+                for (UIWindow *w in [UIApplication sharedApplication].windows) {
+                    if (w != weakSelf.authWindow && !w.hidden) {
+                        appWindow = w;
+                        break;
+                    }
+                }
+                if (appWindow) {
+                    [appWindow makeKeyAndVisible];
+                    if (appWindow.rootViewController) {
+                        [MainMenuThemeEngine styleViewController:appWindow.rootViewController];
+                    }
+                }
+                
+                weakSelf.authWindow.hidden = YES;
+                weakSelf.authWindow.rootViewController = nil;
+                weakSelf.authWindow = nil;
+            }];
         };
         
-        [rootVC presentViewController:gateVC animated:NO completion:nil];
+        self.authWindow.rootViewController = vc;
+        [self.authWindow makeKeyAndVisible];
     });
 }
 
@@ -683,12 +378,10 @@ static BOOL g_isAuthenticated = NO;
 // ==========================================
 __attribute__((constructor))
 static void InitAuthGate() {
-    [TargetedThemeInstaller install];
-    
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
                                                       object:nil
                                                        queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification * _Nonnull note) {
-        [[AuthGatePresenter shared] presentGate];
+        [[AuthGateManager shared] startAuthGate];
     }];
 }
