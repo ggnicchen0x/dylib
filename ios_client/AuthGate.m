@@ -124,21 +124,9 @@
                 }
             }
             
-            if ([text isEqualToString:@"Logout"]) {
-                lbl.textColor = [UIColor colorWithRed:0.95 green:0.25 blue:0.25 alpha:1.0];
-                lbl.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
-            } else if ([text isEqualToString:@"Exploit"] || [text isEqualToString:@"No Exploit"] || [text isEqualToString:@"Account"]) {
+            if ([text isEqualToString:@"Exploit"] || [text isEqualToString:@"No Exploit"] || [text isEqualToString:@"Account"]) {
                 lbl.textColor = THEME_TEXT_WHITE;
                 lbl.font = [UIFont systemFontOfSize:22 weight:UIFontWeightHeavy];
-            } else if ([text isEqualToString:@"Package Name"] || [text isEqualToString:@"Key"] || [text isEqualToString:@"Expires On"] || [text isEqualToString:@"Device Name"] || [text isEqualToString:@"Device Model"] || [text isEqualToString:@"iOS Version"] || [text isEqualToString:@"Battery Info"] || [text isEqualToString:@"Jailbreak"]) {
-                lbl.textColor = THEME_TEXT_WHITE;
-                lbl.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
-            } else if ([text isEqualToString:@"Lifetime"] || [text isEqualToString:@"No"] || [text isEqualToString:@"—"] || [text isEqualToString:@"-"] || [text containsString:@"iPhone"] || [text containsString:@"iOS"] || [text containsString:@"%"] || [text containsString:@"Unplugged"]) {
-                lbl.textColor = [UIColor colorWithRed:0.75 green:0.80 blue:0.95 alpha:1.0];
-                lbl.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
-            } else if ([text containsString:@"This shows your key"] || [text containsString:@"Device information"] || [text containsString:@"diagnostics and support"]) {
-                lbl.textColor = [UIColor colorWithRed:0.70 green:0.75 blue:0.88 alpha:1.0];
-                lbl.font = [UIFont systemFontOfSize:12 weight:UIFontWeightRegular];
             } else if (isInsideSwitchCard || [text isEqualToString:@"Drag"] || [text isEqualToString:@"100% Body"] || [text isEqualToString:@"95% Body"] || [text isEqualToString:@"Maggic Bullet"] || [text isEqualToString:@"ModChest"]) {
                 // Feature label inside white card: Dark bold black
                 lbl.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
@@ -148,20 +136,6 @@
                 lbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
                 lbl.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
             }
-        }
-        
-        // 2. TableViews & Cells (Account Page)
-        else if ([sub isKindOfClass:[UITableView class]]) {
-            UITableView *tv = (UITableView *)sub;
-            tv.backgroundColor = THEME_BG;
-            tv.separatorColor = [UIColor colorWithRed:0.25 green:0.30 blue:0.45 alpha:0.3];
-        }
-        else if ([sub isKindOfClass:[UITableViewCell class]]) {
-            UITableViewCell *cell = (UITableViewCell *)sub;
-            cell.backgroundColor = THEME_CARD_BG;
-            cell.contentView.backgroundColor = THEME_CARD_BG;
-            cell.layer.borderColor = THEME_CARD_BORDER.CGColor;
-            cell.layer.borderWidth = 0.5;
         }
         
         // 2. Switches & their parent row card
@@ -266,12 +240,6 @@
     [self hook_dynamicRuntimeSetText:text];
     if (!text || [NSStringFromClass([self class]) containsString:@"AuthGate"]) return;
     
-    if ([text isEqualToString:@"Logout"]) {
-        self.textColor = [UIColor colorWithRed:0.95 green:0.25 blue:0.25 alpha:1.0];
-        self.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
-        return;
-    }
-    
     // Check if this label is inside a switch row card
     BOOL isInsideSwitchCard = NO;
     UIView *p = self.superview;
@@ -286,12 +254,8 @@
     
     if (isInsideSwitchCard || [text isEqualToString:@"Drag"] || [text isEqualToString:@"100% Body"] || [text isEqualToString:@"95% Body"] || [text isEqualToString:@"Maggic Bullet"] || [text isEqualToString:@"ModChest"]) {
         self.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
-    } else if ([text isEqualToString:@"Exploit"] || [text isEqualToString:@"No Exploit"] || [text isEqualToString:@"Account"] || [text isEqualToString:@"Package Name"] || [text isEqualToString:@"Key"] || [text isEqualToString:@"Expires On"] || [text isEqualToString:@"Device Name"] || [text isEqualToString:@"Device Model"] || [text isEqualToString:@"iOS Version"] || [text isEqualToString:@"Battery Info"] || [text isEqualToString:@"Jailbreak"]) {
+    } else if ([text isEqualToString:@"Exploit"] || [text isEqualToString:@"No Exploit"] || [text isEqualToString:@"Account"]) {
         self.textColor = THEME_TEXT_WHITE;
-    } else if ([text isEqualToString:@"Lifetime"] || [text isEqualToString:@"No"] || [text isEqualToString:@"—"] || [text isEqualToString:@"-"] || [text containsString:@"iPhone"] || [text containsString:@"iOS"] || [text containsString:@"%"] || [text containsString:@"Unplugged"]) {
-        self.textColor = [UIColor colorWithRed:0.75 green:0.80 blue:0.95 alpha:1.0];
-    } else if ([text containsString:@"This shows your key"] || [text containsString:@"Device information"] || [text containsString:@"diagnostics and support"]) {
-        self.textColor = [UIColor colorWithRed:0.70 green:0.75 blue:0.88 alpha:1.0];
     } else {
         // Any status/diagnostics/runtime toast on the dark background ("Drag applied ✓", "Exploit: running", etc.)
         self.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
@@ -325,7 +289,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     [self hook_viewDidLayoutSubviews];
     
     NSString *className = NSStringFromClass([self class]);
-    if ([className containsString:@"Exploit"] || [className containsString:@"Proxy"] || [className containsString:@"Account"] || [className containsString:@"Debug"]) {
+    if ([className containsString:@"Exploit"] || [className containsString:@"Proxy"] || [className containsString:@"Account"]) {
         [MainMenuThemeEngine styleViewController:self];
     }
 }
