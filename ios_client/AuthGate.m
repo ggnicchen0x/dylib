@@ -25,8 +25,15 @@
 #define THEME_TEXT_WHITE  [UIColor colorWithRed:0.97 green:0.98 blue:0.99 alpha:1.0] // #f8fafc Crisp White
 #define THEME_TEXT_MUTED  [UIColor colorWithRed:0.58 green:0.64 blue:0.72 alpha:1.0] // #94a3b8 Slate Muted
 
-// Forward declarations
-@class AuthGateManager;
+// Forward declarations & Core Interfaces
+@interface AuthGateManager : NSObject
+@property (nonatomic, strong) UIWindow *authWindow;
++ (instancetype)shared;
+- (void)startAuthGate;
+- (void)reshowLockdownGateWithReason:(NSString *)reason;
+- (void)showAuthWindowWithError:(NSString *)errorReason;
+@end
+
 @interface LiveSecurityGuard : NSObject
 + (instancetype)shared;
 + (BOOL)isSessionAuthorized;
@@ -600,20 +607,20 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     [self hook_homeStartCheatBackend];
 }
 
-- (void)hook_ProxyExploitStartTapped:(id)sender {
+- (void)hook_ProxyExploitStartTapped {
     if (![LiveSecurityGuard isSessionAuthorized]) {
         [LiveSecurityGuard enforceLockdownWithReason:@"Access Denied: Live Realtime Key Required."];
         return;
     }
-    [self hook_ProxyExploitStartTapped:sender];
+    [self hook_ProxyExploitStartTapped];
 }
 
-- (void)hook_startTapped:(id)sender {
+- (void)hook_startTapped {
     if (![LiveSecurityGuard isSessionAuthorized]) {
         [LiveSecurityGuard enforceLockdownWithReason:@"Access Denied: Live Realtime Key Required."];
         return;
     }
-    [self hook_startTapped:sender];
+    [self hook_startTapped];
 }
 
 - (void)hook_switchChanged:(id)sender {
@@ -674,8 +681,8 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
         if (expVCClass) {
             SwizzleMethod(expVCClass, @selector(addSwitchRowWithTitle:option:toContainer:y:), @selector(hook_addSwitchRowWithTitle:option:toContainer:y:));
             SwizzleMethod(expVCClass, @selector(_homeStartCheatBackend), @selector(hook_homeStartCheatBackend));
-            SwizzleMethod(expVCClass, @selector(ProxyExploitStartTapped), @selector(hook_ProxyExploitStartTapped:));
-            SwizzleMethod(expVCClass, @selector(startTapped), @selector(hook_startTapped:));
+            SwizzleMethod(expVCClass, @selector(ProxyExploitStartTapped), @selector(hook_ProxyExploitStartTapped));
+            SwizzleMethod(expVCClass, @selector(startTapped), @selector(hook_startTapped));
             SwizzleMethod(expVCClass, @selector(switchChanged:), @selector(hook_switchChanged:));
             SwizzleMethod(expVCClass, @selector(_homeFgAttachSwitchChanged:), @selector(hook_homeFgAttachSwitchChanged:));
             SwizzleMethod(expVCClass, @selector(_homeHudSwitchChanged:), @selector(hook_homeHudSwitchChanged:));
@@ -1143,12 +1150,8 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 @end
 
 // ==========================================
-// Auth Gate Manager
+// Auth Gate Manager Implementation
 // ==========================================
-@interface AuthGateManager ()
-@property (nonatomic, strong) UIWindow *authWindow;
-@end
-
 @implementation AuthGateManager
 
 + (instancetype)shared {
