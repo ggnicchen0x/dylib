@@ -82,6 +82,7 @@ static inline NSString *GET_SUPPORT_URL(void) {
 + (void)startHeartbeatTimer;
 + (void)stopHeartbeatTimer;
 + (void)triggerSilentBackgroundValidation;
++ (void)validateSavedKeyOnStartupWithCompletion:(void(^)(BOOL valid, NSString *errorMsg))completion;
 + (void)showVersionAlertWithRequiredVersion:(NSString *)reqVer discordURL:(NSString *)discordURL customMsg:(NSString *)customMsg;
 @end
 
@@ -91,6 +92,7 @@ static inline NSString *GET_SUPPORT_URL(void) {
 @interface AuthStorage : NSObject
 + (void)saveString:(NSString *)value forKey:(NSString *)key;
 + (NSString *)getStringForKey:(NSString *)key;
++ (void)deleteKey:(NSString *)key;
 + (NSString *)getDeviceHWID;
 @end
 
@@ -144,6 +146,18 @@ static inline NSString *GET_SUPPORT_URL(void) {
     
     // 2. Fallback to NSUserDefaults
     return [[NSUserDefaults standardUserDefaults] stringForKey:key];
+}
+
++ (void)deleteKey:(NSString *)key {
+    if (!key) return;
+    NSDictionary *deleteQuery = @{
+        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrAccount: key,
+        (__bridge id)kSecAttrService: @"com.externalff.auth.service"
+    };
+    SecItemDelete((__bridge CFDictionaryRef)deleteQuery);
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:key];
+    [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
 + (NSString *)getDeviceHWID {
@@ -1300,6 +1314,67 @@ static BOOL g_sessionAuthorizedInMemory = NO;
     });
 }
 
++ (void)validateSavedKeyOnStartupWithCompletion:(void(^)(BOOL valid, NSString *errorMsg))completion {
+    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
+    if (!savedKey || savedKey.length == 0) {
+        if (completion) completion(NO, nil);
+        return;
+    }
+    
+    NSString *hwid = [AuthStorage getDeviceHWID];
+    NSString *deviceName = [[UIDevice currentDevice] name] ?: @"iOS Device";
+    NSDictionary *payload = @{
+        @"key": savedKey,
+        @"hwid": hwid,
+        @"device_name": deviceName,
+        @"app_version": CURRENT_CLIENT_VERSION
+    };
+    
+    NSData *data = [NSJSONSerialization dataWithJSONObject:payload options:0 error:nil];
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:GET_VALIDATE_URL()]];
+    [req setHTTPMethod:@"POST"];
+    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [req setHTTPBody:data];
+    [req setTimeoutInterval:6.0];
+    
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData * _Nullable resData, NSURLResponse * _Nullable response, NSError * _Nullable error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (error || !resData) {
+                if (completion) completion(NO, @"Realtime internet connection required to verify license.");
+                return;
+            }
+            
+            NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
+            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:resData options:0 error:nil];
+            NSString *code = json[@"code"] ?: @"";
+            
+            if (httpResp.statusCode == 426 || [code isEqualToString:@"VERSION_OUTDATED"]) {
+                NSString *reqVer = json[@"required_version"] ?: json[@"latest_version"];
+                NSString *disc = json[@"discord_url"];
+                NSString *msg = json[@"message"];
+                [LiveSecurityGuard showVersionAlertWithRequiredVersion:reqVer discordURL:disc customMsg:msg];
+                if (completion) completion(NO, msg ?: @"Newer version detected. Update required.");
+                return;
+            }
+            
+            BOOL success = [json[@"success"] boolValue];
+            if (success) {
+                NSDictionary *dataDict = json[@"data"] ?: json;
+                NSString *token = json[@"token"] ?: dataDict[@"token"];
+                NSNumber *expiresAt = json[@"expires_at"] ?: dataDict[@"expires_at"];
+                [LiveSecurityGuard setAuthorizedSessionWithKey:savedKey token:token expiresAt:expiresAt];
+                if (completion) completion(YES, nil);
+            } else {
+                // Key was deleted from server or is invalid/expired
+                [AuthStorage deleteKey:KEYCHAIN_KEY];
+                NSString *msg = json[@"message"] ?: @"License key is invalid or has been deleted from server.";
+                if (completion) completion(NO, msg);
+            }
+        });
+    }];
+    [task resume];
+}
+
 + (void)triggerSilentBackgroundValidation {
     static BOOL isVerifying = NO;
     if (isVerifying) return;
@@ -1353,11 +1428,11 @@ static BOOL g_sessionAuthorizedInMemory = NO;
                     [LiveSecurityGuard setAuthorizedSessionWithKey:savedKey token:token expiresAt:expiresAt];
                 });
             } else {
-                if ([code isEqualToString:@"KEY_EXPIRED"] || [code isEqualToString:@"KEY_REVOKED"] || [code isEqualToString:@"HWID_MISMATCH"]) {
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        [LiveSecurityGuard enforceLockdownWithReason:json[@"message"] ?: @"Access Denied"];
-                    });
-                }
+                // Key deleted or revoked on server
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [AuthStorage deleteKey:KEYCHAIN_KEY];
+                    [LiveSecurityGuard enforceLockdownWithReason:json[@"message"] ?: @"License key is invalid or has been deleted."];
+                });
             }
         }
     }];
@@ -1811,37 +1886,42 @@ static BOOL g_sessionAuthorizedInMemory = NO;
     dispatch_async(dispatch_get_main_queue(), ^{
         [UIViewController installThemeHooks];
         
-        NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
-        if (g_sessionAuthorizedInMemory || (savedKey && savedKey.length > 0)) {
-            // Unconditionally authorize saved key for seamless launch
-            g_sessionAuthorizedInMemory = YES;
-            [LiveSecurityGuard shared].isAuthorized = YES;
-            [LiveSecurityGuard shared].activeKey = savedKey;
-            
-            // Set root view controller on main window to RootViewController
-            for (UIWindow *w in [UIApplication sharedApplication].windows) {
-                if (w != self.authWindow) {
-                    Class rootVCClass = objc_getClass("RootViewController");
-                    if (rootVCClass) {
-                        UIViewController *existing = w.rootViewController;
-                        if (!existing || ![existing isKindOfClass:rootVCClass]) {
-                            w.rootViewController = [[rootVCClass alloc] init];
-                        }
-                    }
-                    [w makeKeyAndVisible];
-                    if (w.rootViewController) {
-                        [MainMenuThemeEngine styleViewController:w.rootViewController];
-                    }
-                    break;
-                }
-            }
-            
-            // Verify silently in background
-            [LiveSecurityGuard triggerSilentBackgroundValidation];
+        // If already verified in memory during this active session, stay in menu seamlessly
+        if (g_sessionAuthorizedInMemory) {
             return;
         }
         
-        // Show login window only on fresh install / no saved key
+        NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
+        if (savedKey && savedKey.length > 0) {
+            // Validate saved key with server to verify it was NOT deleted, banned, or expired
+            [LiveSecurityGuard validateSavedKeyOnStartupWithCompletion:^(BOOL valid, NSString *errorMsg) {
+                if (valid) {
+                    // Valid! Transition directly to cheat menu without displaying login card
+                    for (UIWindow *w in [UIApplication sharedApplication].windows) {
+                        if (w != self.authWindow) {
+                            Class rootVCClass = objc_getClass("RootViewController");
+                            if (rootVCClass) {
+                                UIViewController *existing = w.rootViewController;
+                                if (!existing || ![existing isKindOfClass:rootVCClass]) {
+                                    w.rootViewController = [[rootVCClass alloc] init];
+                                }
+                            }
+                            [w makeKeyAndVisible];
+                            if (w.rootViewController) {
+                                [MainMenuThemeEngine styleViewController:w.rootViewController];
+                            }
+                            break;
+                        }
+                    }
+                } else {
+                    // Key was deleted from server or is invalid/expired! Show login window with server error
+                    [self showAuthWindowWithError:errorMsg];
+                }
+            }];
+            return;
+        }
+        
+        // No saved key -> Show login window
         [self showAuthWindowWithError:nil];
     });
 }
@@ -1875,8 +1955,7 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 }
 
 - (void)showAuthWindowWithError:(NSString *)errorReason {
-    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
-    if (g_sessionAuthorizedInMemory || (errorReason == nil && savedKey && savedKey.length > 0)) {
+    if (g_sessionAuthorizedInMemory) {
         if (self.authWindow) {
             self.authWindow.hidden = YES;
             self.authWindow.rootViewController = nil;
