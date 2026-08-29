@@ -9,7 +9,7 @@
 #define AUTH_SERVER_URL @"http://192.168.1.163:8000/api/v1/auth/validate" // PC LAN IP (or replace with your public domain / VPS / ngrok)
 #define APP_TITLE @"PROXYVN AUTHENTICATION"
 #define APP_SUBTITLE @"Enter your license key to activate"
-#define SUPPORT_URL @"https://t.me/your_telegram_channel"
+#define SUPPORT_URL @"https://discord.gg/nMQaamDNj2"
 #define KEYCHAIN_KEY @"com.proxyvn.auth.license_key"
 #define KEYCHAIN_HWID @"com.proxyvn.auth.device_hwid"
 
@@ -386,30 +386,26 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     [self.view addSubview:blurView];
     
     CGFloat cardWidth = MIN(self.view.bounds.size.width - 40, 360);
-    CGFloat cardHeight = 440;
+    CGFloat cardHeight = 360;
     
     self.cardView = [[UIView alloc] initWithFrame:CGRectMake((self.view.bounds.size.width - cardWidth)/2, (self.view.bounds.size.height - cardHeight)/2, cardWidth, cardHeight)];
-    self.cardView.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.95];
-    self.cardView.layer.cornerRadius = 20;
-    self.cardView.layer.borderColor = [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:0.3].CGColor;
-    self.cardView.layer.borderWidth = 1.5;
-    self.cardView.layer.shadowColor = [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:0.4].CGColor;
-    self.cardView.layer.shadowOffset = CGSizeMake(0, 10);
-    self.cardView.layer.shadowRadius = 25;
-    self.cardView.layer.shadowOpacity = 0.8;
+    self.cardView.backgroundColor = [UIColor colorWithRed:0.07 green:0.09 blue:0.15 alpha:0.98];
+    self.cardView.layer.cornerRadius = 16;
+    self.cardView.layer.borderColor = [UIColor colorWithRed:0.25 green:0.30 blue:0.45 alpha:0.45].CGColor;
+    self.cardView.layer.borderWidth = 1.0;
     self.cardView.autoresizingMask = UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin | UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
     [self.view addSubview:self.cardView];
     
-    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 25, cardWidth - 40, 30)];
+    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 24, cardWidth - 40, 28)];
     titleLabel.text = APP_TITLE;
     titleLabel.textColor = [UIColor whiteColor];
-    titleLabel.font = [UIFont systemFontOfSize:18 weight:UIFontWeightHeavy];
+    titleLabel.font = [UIFont systemFontOfSize:17 weight:UIFontWeightHeavy];
     titleLabel.textAlignment = NSTextAlignmentCenter;
     [self.cardView addSubview:titleLabel];
     
-    UILabel *subLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 55, cardWidth - 40, 20)];
+    UILabel *subLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 52, cardWidth - 40, 18)];
     subLabel.text = APP_SUBTITLE;
-    subLabel.textColor = [UIColor colorWithWhite:0.7 alpha:1.0];
+    subLabel.textColor = [UIColor colorWithWhite:0.65 alpha:1.0];
     subLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
     subLabel.textAlignment = NSTextAlignmentCenter;
     [self.cardView addSubview:subLabel];
@@ -417,7 +413,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     NSString *hwid = [AuthStorage getDeviceHWID];
     NSString *shortHWID = hwid.length > 18 ? [NSString stringWithFormat:@"%@...%@", [hwid substringToIndex:8], [hwid substringFromIndex:hwid.length-6]] : hwid;
     
-    self.hwidLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 90, cardWidth - 40, 28)];
+    self.hwidLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 82, cardWidth - 40, 28)];
     self.hwidLabel.text = [NSString stringWithFormat:@"HWID: %@", shortHWID];
     self.hwidLabel.textColor = [UIColor colorWithRed:0.5 green:0.6 blue:0.9 alpha:1.0];
     self.hwidLabel.font = [UIFont fontWithName:@"Menlo" size:11] ?: [UIFont systemFontOfSize:11];
@@ -431,8 +427,8 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     [self.hwidLabel addGestureRecognizer:hwidTap];
     [self.cardView addSubview:self.hwidLabel];
     
-    self.keyTextField = [[UITextField alloc] initWithFrame:CGRectMake(20, 135, cardWidth - 40, 48)];
-    self.keyTextField.backgroundColor = [UIColor colorWithRed:0.05 green:0.07 blue:0.12 alpha:1.0];
+    self.keyTextField = [[UITextField alloc] initWithFrame:CGRectMake(20, 122, cardWidth - 40, 48)];
+    self.keyTextField.backgroundColor = [UIColor colorWithRed:0.04 green:0.06 blue:0.10 alpha:1.0];
     self.keyTextField.textColor = [UIColor whiteColor];
     self.keyTextField.font = [UIFont fontWithName:@"Menlo-Bold" size:13] ?: [UIFont systemFontOfSize:13 weight:UIFontWeightBold];
     self.keyTextField.placeholder = @"PVN-XXXX-XXXX-XXXX";
@@ -444,17 +440,23 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     self.keyTextField.autocorrectionType = UITextAutocorrectionTypeNo;
     self.keyTextField.delegate = self;
     self.keyTextField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"ENTER LICENSE KEY" attributes:@{NSForegroundColorAttributeName: [UIColor colorWithWhite:0.4 alpha:1.0]}];
+    
+    // Inline Paste Icon button on the right side of the text field
+    UIButton *pasteIconBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    pasteIconBtn.frame = CGRectMake(0, 0, 42, 48);
+    if (@available(iOS 13.0, *)) {
+        UIImage *img = [UIImage systemImageNamed:@"doc.on.clipboard"];
+        [pasteIconBtn setImage:img forState:UIControlStateNormal];
+        pasteIconBtn.tintColor = [UIColor colorWithRed:0.6 green:0.7 blue:1.0 alpha:1.0];
+    } else {
+        [pasteIconBtn setTitle:@"📋" forState:UIControlStateNormal];
+    }
+    [pasteIconBtn addTarget:self action:@selector(pasteKeyAction) forControlEvents:UIControlEventTouchUpInside];
+    self.keyTextField.rightView = pasteIconBtn;
+    self.keyTextField.rightViewMode = UITextFieldViewModeAlways;
     [self.cardView addSubview:self.keyTextField];
     
-    self.pasteButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.pasteButton.frame = CGRectMake(20, 192, cardWidth - 40, 32);
-    [self.pasteButton setTitle:@"📋 Paste from Clipboard" forState:UIControlStateNormal];
-    [self.pasteButton setTitleColor:[UIColor colorWithRed:0.6 green:0.7 blue:1.0 alpha:1.0] forState:UIControlStateNormal];
-    self.pasteButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
-    [self.pasteButton addTarget:self action:@selector(pasteKeyAction) forControlEvents:UIControlEventTouchUpInside];
-    [self.cardView addSubview:self.pasteButton];
-    
-    self.statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 230, cardWidth - 40, 40)];
+    self.statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 178, cardWidth - 40, 36)];
     self.statusLabel.text = @"";
     self.statusLabel.textColor = [UIColor colorWithRed:0.95 green:0.3 blue:0.3 alpha:1.0];
     self.statusLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
@@ -463,27 +465,23 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     [self.cardView addSubview:self.statusLabel];
     
     self.loginButton = [UIButton buttonWithType:UIButtonTypeCustom];
-    self.loginButton.frame = CGRectMake(20, 280, cardWidth - 40, 48);
+    self.loginButton.frame = CGRectMake(20, 222, cardWidth - 40, 48);
     self.loginButton.backgroundColor = [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:1.0];
-    [self.loginButton setTitle:@"ACTIVATE & ENTER" forState:UIControlStateNormal];
+    [self.loginButton setTitle:@"ACTIVATE" forState:UIControlStateNormal];
     [self.loginButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    self.loginButton.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightBold];
+    self.loginButton.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
     self.loginButton.layer.cornerRadius = 10;
-    self.loginButton.layer.shadowColor = [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:0.5].CGColor;
-    self.loginButton.layer.shadowOffset = CGSizeMake(0, 4);
-    self.loginButton.layer.shadowRadius = 10;
-    self.loginButton.layer.shadowOpacity = 0.8;
     [self.loginButton addTarget:self action:@selector(loginButtonTapped) forControlEvents:UIControlEventTouchUpInside];
     [self.cardView addSubview:self.loginButton];
     
     self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-    self.spinner.center = CGPointMake(cardWidth / 2, 304);
+    self.spinner.center = CGPointMake(cardWidth / 2, 246);
     self.spinner.color = [UIColor whiteColor];
     self.spinner.hidesWhenStopped = YES;
     [self.cardView addSubview:self.spinner];
     
     self.supportButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.supportButton.frame = CGRectMake(20, 350, cardWidth - 40, 36);
+    self.supportButton.frame = CGRectMake(20, 282, cardWidth - 40, 32);
     [self.supportButton setTitle:@"Get Key / Contact Support" forState:UIControlStateNormal];
     [self.supportButton setTitleColor:[UIColor colorWithWhite:0.6 alpha:1.0] forState:UIControlStateNormal];
     self.supportButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightRegular];
@@ -523,7 +521,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
         self.loginButton.enabled = NO;
     } else {
         [self.spinner stopAnimating];
-        [self.loginButton setTitle:@"ACTIVATE & ENTER" forState:UIControlStateNormal];
+        [self.loginButton setTitle:@"ACTIVATE" forState:UIControlStateNormal];
         self.loginButton.enabled = YES;
     }
 }
