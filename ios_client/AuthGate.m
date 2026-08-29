@@ -653,8 +653,27 @@ static inline NSString *GET_SUPPORT_URL(void) {
 @end
 
 // ==========================================
-// UIViewController & UINavigationItem & UITabBarItem Title Hooks
+// UIViewController & UINavigationItem & UITabBarItem Title & Orientation Hooks
 // ==========================================
+@interface UIViewController (OrientationLockHook)
+@end
+
+@implementation UIViewController (OrientationLockHook)
+
+- (UIInterfaceOrientationMask)hook_supportedInterfaceOrientations {
+    return UIInterfaceOrientationMaskPortrait;
+}
+
+- (BOOL)hook_shouldAutorotate {
+    return NO;
+}
+
+- (UIInterfaceOrientation)hook_preferredInterfaceOrientationForPresentation {
+    return UIInterfaceOrientationPortrait;
+}
+
+@end
+
 @interface UIViewController (ThemeTitleHook)
 @end
 
@@ -1006,6 +1025,9 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     dispatch_once(&onceToken, ^{
         SwizzleMethod([UIViewController class], @selector(viewDidLayoutSubviews), @selector(hook_viewDidLayoutSubviews));
         SwizzleMethod([UIViewController class], @selector(setTitle:), @selector(hook_vc_setTitle:));
+        SwizzleMethod([UIViewController class], @selector(supportedInterfaceOrientations), @selector(hook_supportedInterfaceOrientations));
+        SwizzleMethod([UIViewController class], @selector(shouldAutorotate), @selector(hook_shouldAutorotate));
+        SwizzleMethod([UIViewController class], @selector(preferredInterfaceOrientationForPresentation), @selector(hook_preferredInterfaceOrientationForPresentation));
         SwizzleMethod([UINavigationItem class], @selector(setTitle:), @selector(hook_nav_setTitle:));
         SwizzleMethod([UITabBarItem class], @selector(setTitle:), @selector(hook_tab_setTitle:));
         SwizzleMethod([UILabel class], @selector(setText:), @selector(hook_dynamicRuntimeSetText:));
