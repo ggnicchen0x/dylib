@@ -818,7 +818,102 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
         [LiveSecurityGuard enforceLockdownWithReason:@"Access Denied: Live Realtime Key Required."];
         return;
     }
+    
+    UIButton *btn = nil;
+    if ([self respondsToSelector:@selector(startButton)]) {
+        btn = [self performSelector:@selector(startButton)];
+    }
+    
+    UILabel *statusLbl = nil;
+    if ([self respondsToSelector:@selector(statusLabel)]) {
+        statusLbl = [self performSelector:@selector(statusLabel)];
+    }
+    
+    NSString *currentTitle = btn ? [btn titleForState:UIControlStateNormal] : @"";
+    if ([currentTitle isEqualToString:@"START"] || [currentTitle isEqualToString:@"STARTING..."]) {
+        objc_setAssociatedObject(self, "kExploitIsStartingKey", @(YES), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        
+        if (btn) {
+            [btn setTitle:@"STARTING..." forState:UIControlStateNormal];
+            btn.backgroundColor = [UIColor colorWithRed:0.95 green:0.60 blue:0.15 alpha:0.9];
+            [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+        }
+        if (statusLbl) {
+            NSString *osVer = @"";
+            NSOperatingSystemVersion v = [[NSProcessInfo processInfo] operatingSystemVersion];
+            if (v.patchVersion > 0) {
+                osVer = [NSString stringWithFormat:@"iOS %ld.%ld.%ld", (long)v.majorVersion, (long)v.minorVersion, (long)v.patchVersion];
+            } else {
+                osVer = [NSString stringWithFormat:@"iOS %ld.%ld", (long)v.majorVersion, (long)v.minorVersion];
+            }
+            statusLbl.text = [NSString stringWithFormat:@"Exploit: starting...\n%@ | bypassing sandbox...", osVer];
+        }
+    } else {
+        objc_setAssociatedObject(self, "kExploitIsStartingKey", @(NO), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    
     [self hook_startTapped];
+}
+
+- (void)hook_refreshStatus {
+    [self hook_refreshStatus];
+    
+    UIButton *btn = nil;
+    if ([self respondsToSelector:@selector(startButton)]) {
+        btn = [self performSelector:@selector(startButton)];
+    }
+    
+    UILabel *statusLbl = nil;
+    if ([self respondsToSelector:@selector(statusLabel)]) {
+        statusLbl = [self performSelector:@selector(statusLabel)];
+    }
+    
+    BOOL isStarting = [objc_getAssociatedObject(self, "kExploitIsStartingKey") boolValue];
+    NSString *btnTitle = btn ? [btn titleForState:UIControlStateNormal] : @"";
+    
+    if ([btnTitle isEqualToString:@"STOP"]) {
+        objc_setAssociatedObject(self, "kExploitIsStartingKey", @(NO), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (btn) {
+            btn.backgroundColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.25 alpha:0.25];
+            [btn setTitleColor:[UIColor colorWithRed:1.0 green:0.4 blue:0.4 alpha:1.0] forState:UIControlStateNormal];
+            btn.layer.borderColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.25 alpha:0.5].CGColor;
+            btn.layer.borderWidth = 1.0;
+            btn.layer.cornerRadius = 10;
+        }
+    } else if (isStarting) {
+        if (btn) {
+            [btn setTitle:@"STARTING..." forState:UIControlStateNormal];
+            btn.backgroundColor = [UIColor colorWithRed:0.95 green:0.60 blue:0.15 alpha:0.9];
+            [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+            btn.layer.borderColor = [UIColor clearColor].CGColor;
+            btn.layer.borderWidth = 0.0;
+            btn.layer.cornerRadius = 10;
+        }
+        if (statusLbl) {
+            NSString *osVer = @"";
+            NSOperatingSystemVersion v = [[NSProcessInfo processInfo] operatingSystemVersion];
+            if (v.patchVersion > 0) {
+                osVer = [NSString stringWithFormat:@"iOS %ld.%ld.%ld", (long)v.majorVersion, (long)v.minorVersion, (long)v.patchVersion];
+            } else {
+                osVer = [NSString stringWithFormat:@"iOS %ld.%ld", (long)v.majorVersion, (long)v.minorVersion];
+            }
+            statusLbl.text = [NSString stringWithFormat:@"Exploit: starting...\n%@ | bypassing sandbox...", osVer];
+        }
+    } else {
+        if (btn) {
+            [btn setTitle:@"START" forState:UIControlStateNormal];
+            btn.backgroundColor = THEME_ACCENT;
+            [btn setTitleColor:THEME_TEXT_WHITE forState:UIControlStateNormal];
+            btn.layer.borderColor = [UIColor clearColor].CGColor;
+            btn.layer.borderWidth = 0.0;
+            btn.layer.cornerRadius = 10;
+        }
+    }
+}
+
+- (void)hook_exploitStateChanged {
+    [self hook_exploitStateChanged];
+    [self hook_refreshStatus];
 }
 
 - (void)hook_switchChanged:(id)sender {
@@ -934,6 +1029,8 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
             SwizzleMethod(expVCClass, @selector(_homeStartCheatBackend), @selector(hook_homeStartCheatBackend));
             SwizzleMethod(expVCClass, @selector(ProxyExploitStartTapped), @selector(hook_ProxyExploitStartTapped));
             SwizzleMethod(expVCClass, @selector(startTapped), @selector(hook_startTapped));
+            SwizzleMethod(expVCClass, @selector(refreshStatus), @selector(hook_refreshStatus));
+            SwizzleMethod(expVCClass, @selector(exploitStateChanged), @selector(hook_exploitStateChanged));
             SwizzleMethod(expVCClass, @selector(switchChanged:), @selector(hook_switchChanged:));
             SwizzleMethod(expVCClass, @selector(resetTapped), @selector(hook_resetTapped:));
             SwizzleMethod(expVCClass, @selector(_homeFgAttachSwitchChanged:), @selector(hook_homeFgAttachSwitchChanged:));
