@@ -153,11 +153,12 @@
             } else if ([trimmed isEqualToString:@"Home"] || [trimmed isEqualToString:@"Mods"] || [trimmed isEqualToString:@"Mod"] || [trimmed isEqualToString:@"Account"]) {
                 lbl.textColor = THEME_TEXT_WHITE;
                 lbl.font = [UIFont systemFontOfSize:22 weight:UIFontWeightHeavy];
-            } else if ([trimmed containsString:@"ModChest"]) {
+            } else if ([trimmed containsString:@"ModChest"] || [trimmed containsString:@"Chest"]) {
                 UIView *card = lbl.superview;
                 if (card) {
                     card.hidden = YES;
                     card.frame = CGRectZero;
+                    [card removeFromSuperview];
                 }
             } else if ([trimmed containsString:@"Maggic"] || [trimmed containsString:@"Magic"]) {
                 lbl.text = @"200% Magic Bullet";
@@ -177,11 +178,37 @@
         // 2. Switches & their parent row card
         else if ([sub isKindOfClass:[UISwitch class]]) {
             UISwitch *sw = (UISwitch *)sub;
+            UIView *parent = sw.superview;
+            
+            // Check if this switch card belongs to ModChest or has an empty label
+            BOOL isModChest = NO;
+            if (parent) {
+                for (UIView *sibling in parent.subviews) {
+                    if ([sibling isKindOfClass:[UILabel class]]) {
+                        UILabel *l = (UILabel *)sibling;
+                        NSString *t = l.text ?: @"";
+                        NSString *tr = [t stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+                        if ([tr containsString:@"ModChest"] || [tr containsString:@"Chest"] || [tr isEqualToString:@""]) {
+                            isModChest = YES;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if (isModChest) {
+                if (parent) {
+                    parent.hidden = YES;
+                    parent.frame = CGRectZero;
+                    [parent removeFromSuperview];
+                }
+                continue;
+            }
+            
             sw.onTintColor = THEME_ACCENT;
             sw.thumbTintColor = [UIColor whiteColor];
             
             // Style the parent row card
-            UIView *parent = sw.superview;
             if (parent && parent != view) {
                 parent.backgroundColor = THEME_CARD_BG;
                 parent.layer.cornerRadius = 12;
@@ -294,13 +321,13 @@
         self.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
         return;
     }
-    if ([trimmed containsString:@"ModChest"]) {
+    if ([trimmed containsString:@"ModChest"] || [trimmed containsString:@"Chest"]) {
         UIView *p = self.superview;
         if (p) {
             p.hidden = YES;
             p.frame = CGRectZero;
+            [p removeFromSuperview];
         }
-        [self hook_dynamicRuntimeSetText:@""];
         return;
     }
     
@@ -339,10 +366,11 @@
 @implementation NSObject (SwitchRowHook)
 
 - (double)hook_addSwitchRowWithTitle:(NSString *)title option:(NSInteger)option toContainer:(UIView *)container y:(double)y {
-    if ([title containsString:@"ModChest"] || option == 4) {
+    NSString *t = title ? [title stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] : @"";
+    if ([t containsString:@"ModChest"] || [t containsString:@"Chest"] || option == 4) {
         return y;
     }
-    if ([title containsString:@"Maggic"] || [title containsString:@"Magic"]) {
+    if ([t containsString:@"Maggic"] || [t containsString:@"Magic"]) {
         title = @"200% Magic Bullet";
     }
     return [self hook_addSwitchRowWithTitle:title option:option toContainer:container y:y];
