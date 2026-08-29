@@ -780,7 +780,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
                 if ([root respondsToSelector:@selector(_homeStopCheatBackend)]) {
                     [root performSelector:@selector(_homeStopCheatBackend)];
                 }
-                for (UIViewController *child in root.children) {
+                for (UIViewController *child in root.childViewControllers) {
                     if ([child respondsToSelector:@selector(_homeStopCheatBackend)]) {
                         [child performSelector:@selector(_homeStopCheatBackend)];
                     }
