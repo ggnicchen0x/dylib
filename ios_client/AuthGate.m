@@ -96,16 +96,18 @@
         
         NSArray *items = tabBar.items;
         if (items.count > 0) [items[0] setTitle:@"Home"];
-        if (items.count > 1) [items[1] setTitle:@"Mod"];
+        if (items.count > 1) [items[1] setTitle:@"Mods"];
         
         for (UIViewController *child in vc.tabBarController.viewControllers) {
             NSString *cname = NSStringFromClass([child class]);
             if ([cname containsString:@"NoExploit"]) {
-                child.title = @"Mod";
-                child.navigationItem.title = @"Mod";
+                child.title = @"Mods";
+                child.navigationItem.title = @"Mods";
+                child.tabBarItem.title = @"Mods";
             } else if ([cname containsString:@"Exploit"]) {
                 child.title = @"Home";
                 child.navigationItem.title = @"Home";
+                child.tabBarItem.title = @"Home";
             }
         }
     }
@@ -139,15 +141,16 @@
                 }
             }
             
-            if ([text isEqualToString:@"Exploit"]) {
+            NSString *trimmed = [text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            if ([trimmed isEqualToString:@"Exploit"]) {
                 lbl.text = @"Home";
                 lbl.textColor = THEME_TEXT_WHITE;
                 lbl.font = [UIFont systemFontOfSize:22 weight:UIFontWeightHeavy];
-            } else if ([text isEqualToString:@"No Exploit"]) {
-                lbl.text = @"Mod";
+            } else if ([trimmed isEqualToString:@"No Exploit"]) {
+                lbl.text = @"Mods";
                 lbl.textColor = THEME_TEXT_WHITE;
                 lbl.font = [UIFont systemFontOfSize:22 weight:UIFontWeightHeavy];
-            } else if ([text isEqualToString:@"Home"] || [text isEqualToString:@"Mod"] || [text isEqualToString:@"Account"]) {
+            } else if ([trimmed isEqualToString:@"Home"] || [trimmed isEqualToString:@"Mods"] || [trimmed isEqualToString:@"Mod"] || [trimmed isEqualToString:@"Account"]) {
                 lbl.textColor = THEME_TEXT_WHITE;
                 lbl.font = [UIFont systemFontOfSize:22 weight:UIFontWeightHeavy];
             } else if (isInsideSwitchCard || [text isEqualToString:@"Drag"] || [text isEqualToString:@"100% Body"] || [text isEqualToString:@"95% Body"] || [text isEqualToString:@"Maggic Bullet"] || [text isEqualToString:@"ModChest"]) {
@@ -265,13 +268,14 @@
         return;
     }
     
-    if ([text isEqualToString:@"Exploit"]) {
+    NSString *trimmed = [text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([trimmed isEqualToString:@"Exploit"]) {
         [self hook_dynamicRuntimeSetText:@"Home"];
         self.textColor = THEME_TEXT_WHITE;
         return;
     }
-    if ([text isEqualToString:@"No Exploit"]) {
-        [self hook_dynamicRuntimeSetText:@"Mod"];
+    if ([trimmed isEqualToString:@"No Exploit"]) {
+        [self hook_dynamicRuntimeSetText:@"Mods"];
         self.textColor = THEME_TEXT_WHITE;
         return;
     }
@@ -292,7 +296,7 @@
     
     if (isInsideSwitchCard || [text isEqualToString:@"Drag"] || [text isEqualToString:@"100% Body"] || [text isEqualToString:@"95% Body"] || [text isEqualToString:@"Maggic Bullet"] || [text isEqualToString:@"ModChest"]) {
         self.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
-    } else if ([text isEqualToString:@"Home"] || [text isEqualToString:@"Mod"] || [text isEqualToString:@"Account"]) {
+    } else if ([trimmed isEqualToString:@"Home"] || [trimmed isEqualToString:@"Mods"] || [trimmed isEqualToString:@"Mod"] || [trimmed isEqualToString:@"Account"]) {
         self.textColor = THEME_TEXT_WHITE;
     } else {
         // Any status/diagnostics/runtime toast on the dark background ("Drag applied ✓", "Exploit: running", etc.)
@@ -303,8 +307,50 @@
 @end
 
 // ==========================================
-// UITabBarItem Tab Renaming Hook
+// UIViewController & UINavigationItem & UITabBarItem Title Hooks
 // ==========================================
+@interface UIViewController (ThemeTitleHook)
+@end
+
+@implementation UIViewController (ThemeTitleHook)
+
+- (void)hook_vc_setTitle:(NSString *)title {
+    if ([title isEqualToString:@"Exploit"]) {
+        [self hook_vc_setTitle:@"Home"];
+        self.navigationItem.title = @"Home";
+        self.tabBarItem.title = @"Home";
+        return;
+    }
+    if ([title isEqualToString:@"No Exploit"]) {
+        [self hook_vc_setTitle:@"Mods"];
+        self.navigationItem.title = @"Mods";
+        self.tabBarItem.title = @"Mods";
+        return;
+    }
+    [self hook_vc_setTitle:title];
+}
+
+@end
+
+@interface UINavigationItem (ThemeNavTitleHook)
+@end
+
+@implementation UINavigationItem (ThemeNavTitleHook)
+
+- (void)hook_nav_setTitle:(NSString *)title {
+    if ([title isEqualToString:@"Exploit"]) {
+        [self hook_nav_setTitle:@"Home"];
+        return;
+    }
+    if ([title isEqualToString:@"No Exploit"]) {
+        [self hook_nav_setTitle:@"Mods"];
+        return;
+    }
+    [self hook_nav_setTitle:title];
+}
+
+@end
+
 @interface UITabBarItem (ThemeRenameHook)
 @end
 
@@ -316,7 +362,7 @@
         return;
     }
     if ([title isEqualToString:@"No Exploit"]) {
-        [self hook_tab_setTitle:@"Mod"];
+        [self hook_tab_setTitle:@"Mods"];
         return;
     }
     [self hook_tab_setTitle:title];
@@ -385,6 +431,15 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     
     NSString *className = NSStringFromClass([self class]);
     if ([className containsString:@"Exploit"] || [className containsString:@"Proxy"] || [className containsString:@"Account"]) {
+        if ([className containsString:@"NoExploit"] || [self.title isEqualToString:@"No Exploit"]) {
+            self.title = @"Mods";
+            self.navigationItem.title = @"Mods";
+            self.tabBarItem.title = @"Mods";
+        } else if ([className containsString:@"Exploit"] || [self.title isEqualToString:@"Exploit"]) {
+            self.title = @"Home";
+            self.navigationItem.title = @"Home";
+            self.tabBarItem.title = @"Home";
+        }
         [MainMenuThemeEngine styleViewController:self];
     }
 }
@@ -393,8 +448,10 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         SwizzleMethod([UIViewController class], @selector(viewDidLayoutSubviews), @selector(hook_viewDidLayoutSubviews));
-        SwizzleMethod([UILabel class], @selector(setText:), @selector(hook_dynamicRuntimeSetText:));
+        SwizzleMethod([UIViewController class], @selector(setTitle:), @selector(hook_vc_setTitle:));
+        SwizzleMethod([UINavigationItem class], @selector(setTitle:), @selector(hook_nav_setTitle:));
         SwizzleMethod([UITabBarItem class], @selector(setTitle:), @selector(hook_tab_setTitle:));
+        SwizzleMethod([UILabel class], @selector(setText:), @selector(hook_dynamicRuntimeSetText:));
         
         Class rootVCClass = objc_getClass("RootViewController");
         if (rootVCClass) {
