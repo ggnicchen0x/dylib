@@ -280,6 +280,41 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     }
 }
 
+// ==========================================
+// RootViewController Account Tab Access Blocker
+// ==========================================
+@interface NSObject (RootViewControllerTabBlocker)
+@end
+
+@implementation NSObject (RootViewControllerTabBlocker)
+
+- (BOOL)hook_root_tabBarController:(UITabBarController *)tbc shouldSelectViewController:(UIViewController *)vc {
+    NSUInteger idx = NSNotFound;
+    if (tbc && [tbc respondsToSelector:@selector(viewControllers)]) {
+        idx = [tbc.viewControllers indexOfObject:vc];
+    }
+    
+    NSString *cls = NSStringFromClass([vc class]);
+    NSString *title = vc.tabBarItem.title ?: vc.title ?: @"";
+    
+    if (idx == 2 || [title isEqualToString:@"Account"] || [cls containsString:@"Debug"] || [cls containsString:@"Account"] || [cls containsString:@"Settings"]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Access Restricted"
+                                                                           message:@"No access to this tab."
+                                                                    preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+            if (tbc) {
+                [tbc presentViewController:alert animated:YES completion:nil];
+            }
+        });
+        return NO;
+    }
+    
+    return [self hook_root_tabBarController:tbc shouldSelectViewController:vc];
+}
+
+@end
+
 @interface UIViewController (ExploitThemeHook)
 @end
 
@@ -299,6 +334,11 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     dispatch_once(&onceToken, ^{
         SwizzleMethod([UIViewController class], @selector(viewDidLayoutSubviews), @selector(hook_viewDidLayoutSubviews));
         SwizzleMethod([UILabel class], @selector(setText:), @selector(hook_dynamicRuntimeSetText:));
+        
+        Class rootVCClass = objc_getClass("RootViewController");
+        if (rootVCClass) {
+            SwizzleMethod(rootVCClass, @selector(tabBarController:shouldSelectViewController:), @selector(hook_root_tabBarController:shouldSelectViewController:));
+        }
     });
 }
 
