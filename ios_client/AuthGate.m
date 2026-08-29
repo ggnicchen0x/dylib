@@ -13,13 +13,14 @@
 #define KEYCHAIN_KEY @"com.proxyvn.auth.license_key"
 #define KEYCHAIN_HWID @"com.proxyvn.auth.device_hwid"
 
-// Unified Cyberpunk Theme Palette
+// Unified Cyberpunk Dark Theme Palette
 #define THEME_BG          [UIColor colorWithRed:0.04 green:0.05 blue:0.08 alpha:1.0] // #0a0d14 Deep Obsidian
-#define THEME_CARD_BG     [UIColor colorWithRed:0.07 green:0.09 blue:0.15 alpha:0.95] // #111726 Dark Glass Card
-#define THEME_CARD_BORDER [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:0.25] // Indigo border
+#define THEME_CARD_BG     [UIColor colorWithRed:0.08 green:0.10 blue:0.16 alpha:0.98] // #141a29 Frosted Dark Card
+#define THEME_CARD_BORDER [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:0.25] // Indigo Subtle Glow
 #define THEME_ACCENT      [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:1.0] // #6366f1 Neon Indigo
-#define THEME_TEXT_WHITE  [UIColor colorWithRed:0.97 green:0.98 blue:0.99 alpha:1.0] // #f8fafc Crisp White
+#define THEME_TEXT_WHITE  [UIColor colorWithRed:0.97 green:0.98 blue:0.99 alpha:1.0] // #f8fafc Clean White
 #define THEME_TEXT_MUTED  [UIColor colorWithRed:0.58 green:0.64 blue:0.72 alpha:1.0] // #94a3b8 Slate Muted
+#define THEME_RED_DANGER  [UIColor colorWithRed:0.95 green:0.28 blue:0.28 alpha:1.0] // #ef4444 Red Accent
 
 // ==========================================
 // Keychain & Storage Helpers
@@ -59,166 +60,245 @@
 @end
 
 // ==========================================
-// Targeted Main Menu Theme Styler
+// Universal Cyberpunk Theme Engine
 // ==========================================
-@interface MainMenuThemeEngine : NSObject
-+ (void)styleViewController:(UIViewController *)vc;
-+ (void)styleViewHierarchy:(UIView *)view isRoot:(BOOL)isRoot;
+@interface UniversalThemeEngine : NSObject
++ (void)setupGlobalAppearances;
++ (void)themeViewController:(UIViewController *)vc;
++ (void)themeView:(UIView *)view isRoot:(BOOL)isRoot depth:(int)depth;
 @end
 
-@implementation MainMenuThemeEngine
+@implementation UniversalThemeEngine
 
-+ (void)styleViewController:(UIViewController *)vc {
-    if (!vc || !vc.view) return;
-    
-    // Skip the Auth Gate itself
-    if ([NSStringFromClass([vc class]) containsString:@"AuthGate"]) return;
-    
-    // Set root view background
-    vc.view.backgroundColor = THEME_BG;
-    
-    // Set Navigation / Status Bar style
-    if (vc.navigationController) {
-        vc.navigationController.navigationBar.barTintColor = THEME_BG;
-        vc.navigationController.navigationBar.backgroundColor = THEME_BG;
-        vc.navigationController.navigationBar.titleTextAttributes = @{NSForegroundColorAttributeName: THEME_TEXT_WHITE};
-    }
-    
-    // Style Tab Bar if present
-    if (vc.tabBarController) {
-        UITabBar *tabBar = vc.tabBarController.tabBar;
-        tabBar.barTintColor = THEME_BG;
-        tabBar.backgroundColor = THEME_BG;
-        tabBar.tintColor = THEME_ACCENT;
-        tabBar.unselectedItemTintColor = THEME_TEXT_MUTED;
-        tabBar.layer.borderColor = [UIColor colorWithRed:0.2 green:0.25 blue:0.35 alpha:0.3].CGColor;
-        tabBar.layer.borderWidth = 0.5;
-    }
-    
-    [self styleViewHierarchy:vc.view isRoot:YES];
++ (void)setupGlobalAppearances {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        // 1. Tab Bar Appearance (iOS 13 - 18)
+        UITabBarAppearance *tabApp = [[UITabBarAppearance alloc] init];
+        [tabApp configureWithOpaqueBackground];
+        tabApp.backgroundColor = THEME_BG;
+        
+        // Tab normal item
+        tabApp.stackedLayoutAppearance.normal.iconColor = THEME_TEXT_MUTED;
+        tabApp.stackedLayoutAppearance.normal.titleTextAttributes = @{
+            NSForegroundColorAttributeName: THEME_TEXT_MUTED,
+            NSFontAttributeName: [UIFont systemFontOfSize:10 weight:UIFontWeightMedium]
+        };
+        
+        // Tab selected item
+        tabApp.stackedLayoutAppearance.selected.iconColor = THEME_ACCENT;
+        tabApp.stackedLayoutAppearance.selected.titleTextAttributes = @{
+            NSForegroundColorAttributeName: THEME_ACCENT,
+            NSFontAttributeName: [UIFont systemFontOfSize:10 weight:UIFontWeightBold]
+        };
+        
+        [UITabBar appearance].standardAppearance = tabApp;
+        if (@available(iOS 15.0, *)) {
+            [UITabBar appearance].scrollEdgeAppearance = tabApp;
+        }
+        [UITabBar appearance].tintColor = THEME_ACCENT;
+        [UITabBar appearance].barTintColor = THEME_BG;
+        [UITabBar appearance].backgroundColor = THEME_BG;
+
+        // 2. Navigation Bar
+        UINavigationBarAppearance *navApp = [[UINavigationBarAppearance alloc] init];
+        [navApp configureWithOpaqueBackground];
+        navApp.backgroundColor = THEME_BG;
+        navApp.titleTextAttributes = @{NSForegroundColorAttributeName: THEME_TEXT_WHITE};
+        navApp.largeTitleTextAttributes = @{NSForegroundColorAttributeName: THEME_TEXT_WHITE};
+        
+        [UINavigationBar appearance].standardAppearance = navApp;
+        if (@available(iOS 15.0, *)) {
+            [UINavigationBar appearance].scrollEdgeAppearance = navApp;
+        }
+        [UINavigationBar appearance].tintColor = THEME_ACCENT;
+        [UINavigationBar appearance].barTintColor = THEME_BG;
+        [UINavigationBar appearance].backgroundColor = THEME_BG;
+        
+        // 3. Switches & Tables
+        [UISwitch appearance].onTintColor = THEME_ACCENT;
+        [UISwitch appearance].thumbTintColor = [UIColor whiteColor];
+        
+        [UITableView appearance].backgroundColor = THEME_BG;
+        [UITableView appearance].separatorColor = [UIColor colorWithRed:0.2 green:0.25 blue:0.35 alpha:0.3];
+        [UITableViewCell appearance].backgroundColor = THEME_CARD_BG;
+    });
 }
 
-+ (void)styleViewHierarchy:(UIView *)view isRoot:(BOOL)isRoot {
-    if (!view) return;
++ (void)themeViewController:(UIViewController *)vc {
+    if (!vc || !vc.view) return;
+    if ([NSStringFromClass([vc class]) containsString:@"AuthGate"]) return;
+    
+    vc.view.backgroundColor = THEME_BG;
+    
+    // Style Tab Bar if present on this controller
+    if (vc.tabBarController) {
+        UITabBar *tb = vc.tabBarController.tabBar;
+        tb.barTintColor = THEME_BG;
+        tb.backgroundColor = THEME_BG;
+        tb.tintColor = THEME_ACCENT;
+        tb.layer.borderColor = [UIColor colorWithRed:0.2 green:0.25 blue:0.35 alpha:0.3].CGColor;
+        tb.layer.borderWidth = 0.5;
+    }
+    
+    [self themeView:vc.view isRoot:YES depth:0];
+}
+
++ (void)themeView:(UIView *)view isRoot:(BOOL)isRoot depth:(int)depth {
+    if (!view || depth > 25) return;
     if ([NSStringFromClass([view class]) containsString:@"AuthGate"]) return;
     
-    if (isRoot) {
+    // 1. Root & Scroll/Table Backgrounds
+    if (isRoot || [view isKindOfClass:[UITableView class]] || [view isKindOfClass:[UICollectionView class]] || [view isKindOfClass:[UIScrollView class]]) {
         view.backgroundColor = THEME_BG;
     }
     
-    for (UIView *sub in view.subviews) {
-        // 1. Labels
-        if ([sub isKindOfClass:[UILabel class]]) {
-            UILabel *lbl = (UILabel *)sub;
-            NSString *text = lbl.text ?: @"";
-            
-            if ([text isEqualToString:@"Exploit"] || [text isEqualToString:@"No Exploit"] || [text isEqualToString:@"Account"]) {
-                lbl.textColor = THEME_TEXT_WHITE;
-                lbl.font = [UIFont systemFontOfSize:22 weight:UIFontWeightHeavy];
-            } else if ([text containsString:@"no target file"] || [text containsString:@"patch bytes"]) {
-                lbl.textColor = THEME_TEXT_MUTED;
-                lbl.font = [UIFont systemFontOfSize:11 weight:UIFontWeightRegular];
-            } else if ([text containsString:@"sandbox"]) {
-                lbl.textColor = [UIColor colorWithRed:0.7 green:0.75 blue:0.85 alpha:1.0];
+    // 2. Table Cells & List Rows
+    if ([view isKindOfClass:[UITableViewCell class]]) {
+        UITableViewCell *cell = (UITableViewCell *)view;
+        cell.backgroundColor = THEME_CARD_BG;
+        cell.contentView.backgroundColor = THEME_CARD_BG;
+        cell.layer.cornerRadius = 12;
+        cell.layer.borderColor = THEME_CARD_BORDER.CGColor;
+        cell.layer.borderWidth = 0.8;
+        cell.layer.masksToBounds = YES;
+    }
+    
+    // 3. Any White / Light Container View -> Dark Card
+    CGFloat r = 0, g = 0, b = 0, a = 0;
+    if (view.backgroundColor && [view.backgroundColor getRed:&r green:&g blue:&b alpha:&a]) {
+        if (a > 0.1 && (r > 0.72 && g > 0.72 && b > 0.72)) { // Was light gray / white
+            if (!isRoot) {
+                view.backgroundColor = THEME_CARD_BG;
+                view.layer.cornerRadius = 14;
+                view.layer.borderColor = THEME_CARD_BORDER.CGColor;
+                view.layer.borderWidth = 1.0;
+                view.layer.masksToBounds = YES;
             } else {
-                // Feature label (e.g. "Drag", "100% Body", "Maggic Bullet", "ModChest")
-                lbl.textColor = THEME_TEXT_WHITE;
-                lbl.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
+                view.backgroundColor = THEME_BG;
             }
         }
+    }
+    
+    // 4. Switches: Recurse UP to turn all parent containers dark!
+    if ([view isKindOfClass:[UISwitch class]]) {
+        UISwitch *sw = (UISwitch *)view;
+        sw.onTintColor = THEME_ACCENT;
+        sw.thumbTintColor = [UIColor whiteColor];
         
-        // 2. Switches & their parent row card
-        else if ([sub isKindOfClass:[UISwitch class]]) {
-            UISwitch *sw = (UISwitch *)sub;
-            sw.onTintColor = THEME_ACCENT;
-            sw.thumbTintColor = [UIColor whiteColor];
-            
-            // Style the parent row card
-            UIView *parent = sw.superview;
-            if (parent && parent != view) {
-                parent.backgroundColor = THEME_CARD_BG;
-                parent.layer.cornerRadius = 12;
-                parent.layer.borderColor = THEME_CARD_BORDER.CGColor;
-                parent.layer.borderWidth = 1.0;
-                parent.layer.masksToBounds = YES;
+        UIView *p = sw.superview;
+        for (int i = 0; i < 4 && p != nil; i++) {
+            if (![p isKindOfClass:[UIScrollView class]] && ![p isKindOfClass:[UITableView class]]) {
+                p.backgroundColor = THEME_CARD_BG;
+                p.layer.cornerRadius = 14;
+                p.layer.borderColor = THEME_CARD_BORDER.CGColor;
+                p.layer.borderWidth = 1.0;
+                p.layer.masksToBounds = YES;
             }
+            p = p.superview;
         }
+    }
+    
+    // 5. Labels (Text Colors)
+    if ([view isKindOfClass:[UILabel class]]) {
+        UILabel *lbl = (UILabel *)view;
+        NSString *text = lbl.text ?: @"";
         
-        // 3. Segmented Controls ("Free Fire | Free Fire MAX", "Aim | Visuals")
-        else if ([sub isKindOfClass:[UISegmentedControl class]]) {
-            UISegmentedControl *sc = (UISegmentedControl *)sub;
-            sc.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.9];
-            sc.selectedSegmentTintColor = THEME_ACCENT;
-            sc.layer.cornerRadius = 10;
-            sc.layer.borderColor = THEME_CARD_BORDER.CGColor;
-            sc.layer.borderWidth = 1.0;
-            sc.layer.masksToBounds = YES;
-            [sc setTitleTextAttributes:@{NSForegroundColorAttributeName: THEME_TEXT_WHITE, NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightBold]} forState:UIControlStateSelected];
-            [sc setTitleTextAttributes:@{NSForegroundColorAttributeName: THEME_TEXT_MUTED, NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightMedium]} forState:UIControlStateNormal];
+        if ([text isEqualToString:@"Logout"]) {
+            lbl.textColor = THEME_RED_DANGER;
+            lbl.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
+        } else if ([text isEqualToString:@"Exploit"] || [text isEqualToString:@"No Exploit"] || [text isEqualToString:@"Account"]) {
+            lbl.textColor = THEME_TEXT_WHITE;
+            lbl.font = [UIFont systemFontOfSize:24 weight:UIFontWeightHeavy];
+        } else if ([text containsString:@"no target file"] || [text containsString:@"shows your key"] || [text containsString:@"diagnostics and support"] || [text containsString:@"patch bytes"]) {
+            lbl.textColor = THEME_TEXT_MUTED;
+            lbl.font = [UIFont systemFontOfSize:11 weight:UIFontWeightRegular];
+        } else if ([text isEqualToString:@"Lifetime"] || [text isEqualToString:@"No"] || [text containsString:@"iPhone"] || [text containsString:@"iOS"] || [text containsString:@"%"]) {
+            lbl.textColor = [UIColor colorWithRed:0.75 green:0.80 blue:0.92 alpha:1.0];
+            lbl.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
+        } else {
+            // General row titles ("Package Name", "Key", "Device Name", "Drag", "100% Body", etc.)
+            lbl.textColor = THEME_TEXT_WHITE;
+            lbl.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
         }
+    }
+    
+    // 6. Segmented Controls ("Free Fire | Free Fire MAX", "Aim | Visuals")
+    if ([view isKindOfClass:[UISegmentedControl class]]) {
+        UISegmentedControl *sc = (UISegmentedControl *)view;
+        sc.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.95];
+        sc.selectedSegmentTintColor = THEME_ACCENT;
+        sc.layer.cornerRadius = 10;
+        sc.layer.borderColor = THEME_CARD_BORDER.CGColor;
+        sc.layer.borderWidth = 1.0;
+        sc.layer.masksToBounds = YES;
+        [sc setTitleTextAttributes:@{NSForegroundColorAttributeName: THEME_TEXT_WHITE, NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightBold]} forState:UIControlStateSelected];
+        [sc setTitleTextAttributes:@{NSForegroundColorAttributeName: THEME_TEXT_MUTED, NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightMedium]} forState:UIControlStateNormal];
+    }
+    
+    // 7. Buttons
+    if ([view isKindOfClass:[UIButton class]]) {
+        UIButton *btn = (UIButton *)view;
+        NSString *title = [btn titleForState:UIControlStateNormal] ?: @"";
         
-        // 4. Buttons
-        else if ([sub isKindOfClass:[UIButton class]]) {
-            UIButton *btn = (UIButton *)sub;
-            NSString *title = [btn titleForState:UIControlStateNormal] ?: @"";
-            
-            if ([title isEqualToString:@"START"]) {
-                btn.backgroundColor = THEME_ACCENT;
-                [btn setTitleColor:THEME_TEXT_WHITE forState:UIControlStateNormal];
-                btn.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
-                btn.layer.cornerRadius = 10;
-                btn.layer.shadowColor = THEME_ACCENT.CGColor;
-                btn.layer.shadowOffset = CGSizeMake(0, 4);
-                btn.layer.shadowRadius = 8;
-                btn.layer.shadowOpacity = 0.4;
-            } else if ([title isEqualToString:@"STOP"]) {
-                btn.backgroundColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.25 alpha:0.25];
-                [btn setTitleColor:[UIColor colorWithRed:1.0 green:0.4 blue:0.4 alpha:1.0] forState:UIControlStateNormal];
-                btn.layer.borderColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.25 alpha:0.5].CGColor;
-                btn.layer.borderWidth = 1.0;
-                btn.layer.cornerRadius = 10;
-            } else if ([title isEqualToString:@"Reset"]) {
-                btn.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.8];
-                [btn setTitleColor:THEME_ACCENT forState:UIControlStateNormal];
-                btn.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
-                btn.layer.borderColor = THEME_CARD_BORDER.CGColor;
-                btn.layer.borderWidth = 1.0;
-                btn.layer.cornerRadius = 10;
-            }
+        if ([title isEqualToString:@"START"]) {
+            btn.backgroundColor = THEME_ACCENT;
+            [btn setTitleColor:THEME_TEXT_WHITE forState:UIControlStateNormal];
+            btn.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
+            btn.layer.cornerRadius = 10;
+            btn.layer.shadowColor = THEME_ACCENT.CGColor;
+            btn.layer.shadowOffset = CGSizeMake(0, 4);
+            btn.layer.shadowRadius = 8;
+            btn.layer.shadowOpacity = 0.4;
+        } else if ([title isEqualToString:@"STOP"]) {
+            btn.backgroundColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.25 alpha:0.25];
+            [btn setTitleColor:[UIColor colorWithRed:1.0 green:0.4 blue:0.4 alpha:1.0] forState:UIControlStateNormal];
+            btn.layer.borderColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.25 alpha:0.5].CGColor;
+            btn.layer.borderWidth = 1.0;
+            btn.layer.cornerRadius = 10;
+        } else if ([title isEqualToString:@"Reset"]) {
+            btn.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.85];
+            [btn setTitleColor:THEME_ACCENT forState:UIControlStateNormal];
+            btn.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
+            btn.layer.borderColor = THEME_CARD_BORDER.CGColor;
+            btn.layer.borderWidth = 1.0;
+            btn.layer.cornerRadius = 10;
+        } else if ([title isEqualToString:@"Logout"]) {
+            [btn setTitleColor:THEME_RED_DANGER forState:UIControlStateNormal];
+            btn.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
         }
-        
-        // 5. Status Card / Container boxes
-        else if (sub.subviews.count > 0 && ![sub isKindOfClass:[UIScrollView class]]) {
-            // Check if this container contains the START/STOP button or sandbox status
-            BOOL isStatusCard = NO;
-            for (UIView *child in sub.subviews) {
-                if ([child isKindOfClass:[UIButton class]]) {
-                    UIButton *b = (UIButton *)child;
-                    NSString *t = [b titleForState:UIControlStateNormal];
-                    if ([t isEqualToString:@"START"] || [t isEqualToString:@"STOP"]) {
-                        isStatusCard = YES;
-                        break;
-                    }
+    }
+    
+    // 8. Status Box Container
+    if (view.subviews.count > 0 && ![view isKindOfClass:[UIScrollView class]] && ![view isKindOfClass:[UITableView class]]) {
+        BOOL hasStartStop = NO;
+        for (UIView *child in view.subviews) {
+            if ([child isKindOfClass:[UIButton class]]) {
+                NSString *t = [((UIButton *)child) titleForState:UIControlStateNormal];
+                if ([t isEqualToString:@"START"] || [t isEqualToString:@"STOP"]) {
+                    hasStartStop = YES;
+                    break;
                 }
             }
-            if (isStatusCard) {
-                sub.backgroundColor = THEME_CARD_BG;
-                sub.layer.cornerRadius = 16;
-                sub.layer.borderColor = THEME_CARD_BORDER.CGColor;
-                sub.layer.borderWidth = 1.2;
-                sub.layer.masksToBounds = YES;
-            }
         }
-        
-        // Recurse children
-        [self styleViewHierarchy:sub isRoot:NO];
+        if (hasStartStop) {
+            view.backgroundColor = THEME_CARD_BG;
+            view.layer.cornerRadius = 16;
+            view.layer.borderColor = THEME_CARD_BORDER.CGColor;
+            view.layer.borderWidth = 1.2;
+            view.layer.masksToBounds = YES;
+        }
+    }
+    
+    // Recurse children
+    for (UIView *child in view.subviews) {
+        [self themeView:child isRoot:NO depth:depth + 1];
     }
 }
 
 @end
 
 // ==========================================
-// Swizzle Specifically for Exploit View Controllers
+// Runtime Swizzler on All View Controllers
 // ==========================================
 static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     Method origMethod = class_getInstanceMethod(cls, origSel);
@@ -233,24 +313,30 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     }
 }
 
-@interface UIViewController (ExploitThemeHook)
+@interface UIViewController (ThemeHooks)
 @end
 
-@implementation UIViewController (ExploitThemeHook)
+@implementation UIViewController (ThemeHooks)
 
-- (void)hook_viewDidLayoutSubviews {
-    [self hook_viewDidLayoutSubviews];
-    
-    NSString *className = NSStringFromClass([self class]);
-    if ([className containsString:@"Exploit"] || [className containsString:@"Proxy"] || [className containsString:@"Account"]) {
-        [MainMenuThemeEngine styleViewController:self];
+- (void)themeHook_viewWillAppear:(BOOL)animated {
+    [self themeHook_viewWillAppear:animated];
+    if (![NSStringFromClass([self class]) containsString:@"AuthGate"]) {
+        [UniversalThemeEngine themeViewController:self];
+    }
+}
+
+- (void)themeHook_viewDidLayoutSubviews {
+    [self themeHook_viewDidLayoutSubviews];
+    if (![NSStringFromClass([self class]) containsString:@"AuthGate"]) {
+        [UniversalThemeEngine themeViewController:self];
     }
 }
 
 + (void)installThemeHooks {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        SwizzleMethod([UIViewController class], @selector(viewDidLayoutSubviews), @selector(hook_viewDidLayoutSubviews));
+        SwizzleMethod([UIViewController class], @selector(viewWillAppear:), @selector(themeHook_viewWillAppear:));
+        SwizzleMethod([UIViewController class], @selector(viewDidLayoutSubviews), @selector(themeHook_viewDidLayoutSubviews));
     });
 }
 
@@ -282,7 +368,6 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 
     [self setupUI];
     
-    // Auto validate if key exists
     NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
     if (savedKey && savedKey.length > 0) {
         self.keyTextField.text = savedKey;
@@ -542,7 +627,8 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 
 - (void)startAuthGate {
     dispatch_async(dispatch_get_main_queue(), ^{
-        // Install targeted theme swizzler
+        // Configure global appearances and install view controller hooks
+        [UniversalThemeEngine setupGlobalAppearances];
         [UIViewController installThemeHooks];
         
         UIScreen *mainScreen = [UIScreen mainScreen];
@@ -565,7 +651,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
                 if (appWindow) {
                     [appWindow makeKeyAndVisible];
                     if (appWindow.rootViewController) {
-                        [MainMenuThemeEngine styleViewController:appWindow.rootViewController];
+                        [UniversalThemeEngine themeViewController:appWindow.rootViewController];
                     }
                 }
                 
@@ -591,6 +677,8 @@ static void InitAuthGate() {
                                                       object:nil
                                                        queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification * _Nonnull note) {
+        [UniversalThemeEngine setupGlobalAppearances];
+        [UIViewController installThemeHooks];
         [[AuthGateManager shared] startAuthGate];
     }];
 }
