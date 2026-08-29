@@ -244,13 +244,13 @@ static inline NSString *GET_SUPPORT_URL(void) {
     
     // Precise Ghidra Geometry:
     // Home (ProxyExploitViewController, has top START box @ y=48):
-    //   Cards end at y=450.0. Reset @ y=468.0. Status @ y=522.0. ContentSize @ 670.0.
+    //   Cards end at y=450.0. Reset @ y=468.0. Status @ y=522.0. ContentSize @ 700.0.
     // Mods (ProxyNoExploitViewController, no top START box, starts directly at y=16):
-    //   Cards end at y=342.0. Reset @ y=360.0. Status @ y=414.0. ContentSize @ 514.0.
+    //   Cards end at y=342.0. Reset @ y=360.0. Status @ y=414.0. ContentSize @ 560.0.
     
     CGFloat resetY = isNoExploit ? 360.0 : 468.0;
     CGFloat statusY = isNoExploit ? 414.0 : 522.0;
-    CGFloat contentH = isNoExploit ? 514.0 : 670.0;
+    CGFloat contentH = isNoExploit ? 560.0 : 700.0;
     
     for (UIView *sub in sv.subviews) {
         if ([sub isKindOfClass:[UIButton class]]) {
@@ -268,7 +268,14 @@ static inline NSString *GET_SUPPORT_URL(void) {
             if (lbl.numberOfLines != 1 && lbl.superview == sv) {
                 CGRect f = lbl.frame;
                 f.origin.y = statusY;
+                f.origin.x = 16.0;
+                f.size.width = sv.bounds.size.width > 32 ? (sv.bounds.size.width - 32.0) : 340.0;
+                f.size.height = 80.0;
                 lbl.frame = f;
+                lbl.numberOfLines = 0;
+                lbl.lineBreakMode = NSLineBreakByWordWrapping;
+                lbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
+                lbl.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
             }
         }
     }
@@ -297,7 +304,7 @@ static inline NSString *GET_SUPPORT_URL(void) {
             // Check if label is inside a switch row card
             BOOL isInsideSwitchCard = NO;
             UIView *p = lbl.superview;
-            if (p) {
+            if (p && ![p isKindOfClass:[UIScrollView class]]) {
                 for (UIView *sibling in p.subviews) {
                     if ([sibling isKindOfClass:[UISwitch class]]) {
                         isInsideSwitchCard = YES;
@@ -325,18 +332,19 @@ static inline NSString *GET_SUPPORT_URL(void) {
                     card.frame = CGRectZero;
                     [card removeFromSuperview];
                 }
-            } else if ([trimmed containsString:@"Maggic"] || [trimmed containsString:@"Magic"]) {
+            } else if ([trimmed isEqualToString:@"Maggic Bullet"] || [trimmed isEqualToString:@"Magic Bullet"]) {
                 lbl.text = @"200% Magic Bullet";
                 lbl.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
                 lbl.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
-            } else if (isInsideSwitchCard || [trimmed isEqualToString:@"Drag"] || [trimmed isEqualToString:@"100% Body"] || [trimmed isEqualToString:@"95% Body"] || [trimmed containsString:@"Magic Bullet"]) {
+            } else if (isInsideSwitchCard) {
                 // Feature label inside white card: Dark bold black
                 lbl.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
                 lbl.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
             } else {
                 // All status, diagnostics, and dynamic messages on the dark background ("Drag applied ✓", "Exploit: running", etc.): Bright Light Cyan/Slate
                 lbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
-                lbl.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
+                lbl.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+                lbl.numberOfLines = 0;
             }
         }
         
@@ -481,7 +489,7 @@ static inline NSString *GET_SUPPORT_URL(void) {
         self.textColor = THEME_TEXT_WHITE;
         return;
     }
-    if ([trimmed containsString:@"Maggic"] || [trimmed containsString:@"Magic Bullet"]) {
+    if ([trimmed isEqualToString:@"Maggic Bullet"] || [trimmed isEqualToString:@"Magic Bullet"]) {
         [self hook_dynamicRuntimeSetText:@"200% Magic Bullet"];
         self.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
         return;
@@ -501,7 +509,7 @@ static inline NSString *GET_SUPPORT_URL(void) {
     // Check if this label is inside a switch row card
     BOOL isInsideSwitchCard = NO;
     UIView *p = self.superview;
-    if (p) {
+    if (p && ![p isKindOfClass:[UIScrollView class]]) {
         for (UIView *sibling in p.subviews) {
             if ([sibling isKindOfClass:[UISwitch class]]) {
                 isInsideSwitchCard = YES;
@@ -510,13 +518,17 @@ static inline NSString *GET_SUPPORT_URL(void) {
         }
     }
     
-    if (isInsideSwitchCard || [text isEqualToString:@"Drag"] || [text isEqualToString:@"100% Body"] || [text isEqualToString:@"95% Body"] || [text containsString:@"Magic Bullet"]) {
+    if (isInsideSwitchCard) {
         self.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
+        self.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
     } else if ([trimmed isEqualToString:@"Home"] || [trimmed isEqualToString:@"Mods"] || [trimmed isEqualToString:@"Mod"] || [trimmed isEqualToString:@"Account"]) {
         self.textColor = THEME_TEXT_WHITE;
+        self.font = [UIFont systemFontOfSize:22 weight:UIFontWeightHeavy];
     } else {
         // Any status/diagnostics/runtime toast on the dark background ("Drag applied ✓", "Exploit: running", etc.)
         self.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
+        self.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+        self.numberOfLines = 0;
     }
 }
 
@@ -539,6 +551,45 @@ static inline NSString *GET_SUPPORT_URL(void) {
         title = @"200% Magic Bullet";
     }
     return [self hook_addSwitchRowWithTitle:title option:option toContainer:container y:y];
+}
+
+@end
+
+// ==========================================
+// FluckAuthCore Native Bypass & Gate Interceptor
+// ==========================================
+@interface NSObject (FluckAuthCoreBypassHooks)
+@end
+
+@implementation NSObject (FluckAuthCoreBypassHooks)
+
+- (BOOL)hook_fluck_gatePassed {
+    return [LiveSecurityGuard isSessionAuthorized];
+}
+
+- (NSString *)hook_fluck_savedKey {
+    return [AuthStorage getStringForKey:KEYCHAIN_KEY] ?: @"";
+}
+
+- (void)hook_fluck_markGatePassed {
+}
+
+- (void)hook_fluck_refreshExpiryFromServer {
+}
+
+- (void)hook_fluck_startHeartbeat {
+}
+
+- (void)hook_fluck_startKeyWatchdog {
+}
+
+- (void)hook_fluck_revokeGateWithReason:(id)reason {
+}
+
+- (void)hook_fluck_revokeAndDie:(id)arg1 label:(id)arg2 {
+}
+
+- (void)hook_fluck_failAndDie:(id)arg1 {
 }
 
 @end
@@ -766,6 +817,19 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
         SwizzleMethod([UITabBarItem class], @selector(setTitle:), @selector(hook_tab_setTitle:));
         SwizzleMethod([UILabel class], @selector(setText:), @selector(hook_dynamicRuntimeSetText:));
         
+        Class fluckClass = objc_getClass("FluckAuthCore");
+        if (fluckClass) {
+            SwizzleMethod(fluckClass, @selector(gatePassed), @selector(hook_fluck_gatePassed));
+            SwizzleMethod(fluckClass, @selector(savedKey), @selector(hook_fluck_savedKey));
+            SwizzleMethod(fluckClass, @selector(markGatePassed), @selector(hook_fluck_markGatePassed));
+            SwizzleMethod(fluckClass, @selector(refreshExpiryFromServer), @selector(hook_fluck_refreshExpiryFromServer));
+            SwizzleMethod(fluckClass, @selector(startHeartbeat), @selector(hook_fluck_startHeartbeat));
+            SwizzleMethod(fluckClass, @selector(startKeyWatchdog), @selector(hook_fluck_startKeyWatchdog));
+            SwizzleMethod(fluckClass, @selector(revokeGateWithReason:), @selector(hook_fluck_revokeGateWithReason:));
+            SwizzleMethod(fluckClass, @selector(revokeAndDie:label:), @selector(hook_fluck_revokeAndDie:label:));
+            SwizzleMethod(fluckClass, @selector(failAndDie:), @selector(hook_fluck_failAndDie:));
+        }
+        
         Class expVCClass = objc_getClass("ProxyExploitViewController");
         if (expVCClass) {
             SwizzleMethod(expVCClass, @selector(addSwitchRowWithTitle:option:toContainer:y:), @selector(hook_addSwitchRowWithTitle:option:toContainer:y:));
@@ -782,7 +846,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
         if (noExpVCClass) {
             SwizzleMethod(noExpVCClass, @selector(addSwitchRowWithTitle:option:toContainer:y:), @selector(hook_addSwitchRowWithTitle:option:toContainer:y:));
             SwizzleMethod(noExpVCClass, @selector(switchChanged:), @selector(hook_switchChanged:));
-            SwizzleMethod(noExpVCClass, @selector(startTapped), @selector(hook_startTapped:));
+            SwizzleMethod(noExpVCClass, @selector(startTapped), @selector(hook_startTapped));
         }
         
         Class rootVCClass = objc_getClass("RootViewController");
