@@ -180,7 +180,7 @@
             } else if ([title isEqualToString:@"Reset"]) {
                 btn.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.8];
                 [btn setTitleColor:THEME_ACCENT forState:UIControlStateNormal];
-                btn.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemiBold];
+                btn.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
                 btn.layer.borderColor = THEME_CARD_BORDER.CGColor;
                 btn.layer.borderWidth = 1.0;
                 btn.layer.cornerRadius = 10;
