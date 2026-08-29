@@ -119,9 +119,10 @@
                 // Top status box labels: Crisp light cyan/slate (#c7d2fe) matching reference image
                 lbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
                 lbl.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
-            } else if ([text containsString:@"no target file"] || [text containsString:@"patch bytes"]) {
-                lbl.textColor = THEME_TEXT_MUTED;
-                lbl.font = [UIFont systemFontOfSize:11 weight:UIFontWeightRegular];
+            } else if ([text containsString:@"no target file"] || [text containsString:@"patch bytes"] || [text containsString:@"sandbox access"]) {
+                // Bottom footer/diagnostics text: Bright light cyan/slate matching top status text
+                lbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
+                lbl.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
             } else if ([text isEqualToString:@"Drag"] || [text isEqualToString:@"100% Body"] || [text isEqualToString:@"95% Body"] || [text isEqualToString:@"Maggic Bullet"] || [text isEqualToString:@"ModChest"]) {
                 // Feature label: Dark bold black for clear visibility on the white card
                 lbl.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
