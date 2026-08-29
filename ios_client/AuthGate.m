@@ -6,7 +6,7 @@
 // ==========================================
 // Configurable Settings
 // ==========================================
-#define AUTH_SERVER_URL @"http://127.0.0.1:8000/api/v1/auth/validate" // Replace with your public IP / domain in production
+#define AUTH_SERVER_URL @"http://192.168.1.163:8000/api/v1/auth/validate" // PC LAN IP (or replace with your public domain / VPS / ngrok)
 #define APP_TITLE @"PROXYVN AUTHENTICATION"
 #define APP_SUBTITLE @"Enter your license key to activate"
 #define SUPPORT_URL @"https://t.me/your_telegram_channel"
