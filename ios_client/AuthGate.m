@@ -1271,15 +1271,6 @@ static BOOL g_sessionAuthorizedInMemory = NO;
         }
         return YES;
     }
-    
-    // Check if a saved license exists in Keychain
-    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
-    if (savedKey && savedKey.length > 0) {
-        // Validate silently in background and allow user to continue
-        [self triggerSilentBackgroundValidation];
-        return YES;
-    }
-    
     return NO;
 }
 
@@ -1562,13 +1553,6 @@ static BOOL g_sessionAuthorizedInMemory = NO;
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.85];
     
-    if ([LiveSecurityGuard isSessionAuthorized] && (!self.initialErrorReason || self.initialErrorReason.length == 0)) {
-        if (self.onSuccessBlock) {
-            self.onSuccessBlock();
-        }
-        return;
-    }
-    
     UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dismissKeyboard)];
     [self.view addGestureRecognizer:tap];
 
@@ -1578,11 +1562,10 @@ static BOOL g_sessionAuthorizedInMemory = NO;
         self.statusLabel.textColor = [UIColor colorWithRed:0.95 green:0.3 blue:0.3 alpha:1.0];
         self.statusLabel.text = self.initialErrorReason;
     } else {
-        // Auto validate if key exists
+        // Pre-fill key if saved for user convenience
         NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
         if (savedKey && savedKey.length > 0) {
             self.keyTextField.text = savedKey;
-            [self performAuthWithKey:savedKey isAutoLogin:YES];
         }
     }
 }
@@ -1850,10 +1833,6 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 - (void)startAuthGate {
     dispatch_async(dispatch_get_main_queue(), ^{
         [UIViewController installThemeHooks];
-        if ([LiveSecurityGuard isSessionAuthorized]) {
-            [self dismissAuthWindowIfAuthorized];
-            return;
-        }
         [self showAuthWindowWithError:nil];
     });
 }
@@ -1884,10 +1863,6 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 }
 
 - (void)showAuthWindowWithError:(NSString *)errorReason {
-    if (!errorReason && [LiveSecurityGuard isSessionAuthorized]) {
-        [self dismissAuthWindowIfAuthorized];
-        return;
-    }
     
     if (!self.authWindow) {
         UIScreen *mainScreen = [UIScreen mainScreen];
