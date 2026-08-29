@@ -71,6 +71,7 @@ static inline NSString *GET_SUPPORT_URL(void) {
 - (void)startAuthGate;
 - (void)reshowLockdownGateWithReason:(NSString *)reason;
 - (void)showAuthWindowWithError:(NSString *)errorReason;
+- (void)dismissAuthWindowIfAuthorized;
 @end
 
 @interface LiveSecurityGuard : NSObject
@@ -655,6 +656,90 @@ static inline NSString *GET_SUPPORT_URL(void) {
 @end
 
 // ==========================================
+// RootViewController & FluckAuthViewController Gate Suppression Hooks
+// ==========================================
+@interface NSObject (RootViewControllerGateHooks)
+@end
+
+@implementation NSObject (RootViewControllerGateHooks)
+
+- (BOOL)hook_root_gateDone {
+    return [LiveSecurityGuard isSessionAuthorized];
+}
+
+- (void)hook_root_showActivationCard {
+    if ([LiveSecurityGuard isSessionAuthorized]) {
+        return; // Suppress activation card when logged in
+    }
+    [self hook_root_showActivationCard];
+}
+
+- (void)hook_root_showActivationCardWithError:(id)err {
+    if ([LiveSecurityGuard isSessionAuthorized]) {
+        return; // Suppress activation card error modal when logged in
+    }
+    [self hook_root_showActivationCardWithError:err];
+}
+
+- (void)hook_root_presentAsModal {
+    if ([LiveSecurityGuard isSessionAuthorized]) {
+        return;
+    }
+    [self hook_root_presentAsModal];
+}
+
+- (void)hook_root_beginGate {
+    if ([LiveSecurityGuard isSessionAuthorized]) {
+        return;
+    }
+    [self hook_root_beginGate];
+}
+
+- (void)hook_root_startGate {
+    if ([LiveSecurityGuard isSessionAuthorized]) {
+        return;
+    }
+    [self hook_root_startGate];
+}
+
+- (void)hook_root_finishGate {
+    [self hook_root_finishGate];
+}
+
+@end
+
+@interface UIViewController (FluckAuthVCHooks)
+@end
+
+@implementation UIViewController (FluckAuthVCHooks)
+
+- (void)hook_fluckVC_viewDidLoad {
+    [self hook_fluckVC_viewDidLoad];
+    if ([LiveSecurityGuard isSessionAuthorized]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self dismissViewControllerAnimated:NO completion:nil];
+            if (self.view.superview) {
+                [self.view removeFromSuperview];
+            }
+        });
+    }
+}
+
+- (void)hook_fluckVC_viewWillAppear:(BOOL)animated {
+    [self hook_fluckVC_viewWillAppear:animated];
+    if ([LiveSecurityGuard isSessionAuthorized]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self dismissViewControllerAnimated:NO completion:nil];
+            if (self.view.superview) {
+                [self.view removeFromSuperview];
+            }
+        });
+    }
+}
+
+@end
+
+// ==========================================
 // UIViewController & UINavigationItem & UITabBarItem Title & Orientation Hooks
 // ==========================================
 @interface UIViewController (OrientationLockHook)
@@ -1072,6 +1157,18 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
         Class rootVCClass = objc_getClass("RootViewController");
         if (rootVCClass) {
             SwizzleMethod(rootVCClass, @selector(tabBarController:shouldSelectViewController:), @selector(hook_root_tabBarController:shouldSelectViewController:));
+            SwizzleMethod(rootVCClass, @selector(showActivationCard), @selector(hook_root_showActivationCard));
+            SwizzleMethod(rootVCClass, @selector(showActivationCardWithError:), @selector(hook_root_showActivationCardWithError:));
+            SwizzleMethod(rootVCClass, @selector(gateDone), @selector(hook_root_gateDone));
+            SwizzleMethod(rootVCClass, @selector(_presentAsModal), @selector(hook_root_presentAsModal));
+            SwizzleMethod(rootVCClass, @selector(beginGate), @selector(hook_root_beginGate));
+            SwizzleMethod(rootVCClass, @selector(startGate), @selector(hook_root_startGate));
+            SwizzleMethod(rootVCClass, @selector(finishGate), @selector(hook_root_finishGate));
+        }
+        Class fluckVCClass = objc_getClass("FluckAuthViewController");
+        if (fluckVCClass) {
+            SwizzleMethod(fluckVCClass, @selector(viewDidLoad), @selector(hook_fluckVC_viewDidLoad));
+            SwizzleMethod(fluckVCClass, @selector(viewWillAppear:), @selector(hook_fluckVC_viewWillAppear:));
         }
     });
 }
@@ -1081,6 +1178,8 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 // ==========================================
 // Live Realtime Security Guard & Heartbeat Engine
 // ==========================================
+static BOOL g_sessionAuthorizedInMemory = NO;
+
 @interface LiveSecurityGuard ()
 @property (nonatomic, assign) BOOL isAuthorized;
 @property (nonatomic, copy) NSString *activeKey;
@@ -1108,13 +1207,64 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
         _isAuthorized = NO;
         _consecutiveFailures = 0;
         _expiresAtTimestamp = 0;
+        [self setupLifecycleObservers];
     }
     return self;
 }
 
+- (void)setupLifecycleObservers {
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleAppDidEnterBackground)
+                                                 name:UIApplicationDidEnterBackgroundNotification
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleAppWillEnterForeground)
+                                                 name:UIApplicationWillEnterForegroundNotification
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleAppDidBecomeActive)
+                                                 name:UIApplicationDidBecomeActiveNotification
+                                               object:nil];
+}
+
+- (void)handleAppDidEnterBackground {
+    // When app is minimized / sent to background:
+    // Pause heartbeat timer and reset failures so background network suspension does NOT trip lockout.
+    [LiveSecurityGuard stopHeartbeatTimer];
+    self.consecutiveFailures = 0;
+}
+
+- (void)handleAppWillEnterForeground {
+    // When app resumes / enters foreground:
+    if (self.isAuthorized || g_sessionAuthorizedInMemory) {
+        self.isAuthorized = YES;
+        g_sessionAuthorizedInMemory = YES;
+        self.consecutiveFailures = 0;
+        
+        // Verify expiration locally
+        if (self.expiresAtTimestamp > 0 && [[NSDate date] timeIntervalSince1970] > self.expiresAtTimestamp) {
+            [LiveSecurityGuard enforceLockdownWithReason:@"License has expired."];
+            return;
+        }
+        
+        // Restart heartbeat timer and ensure auth window is dismissed
+        [LiveSecurityGuard startHeartbeatTimer];
+        [[AuthGateManager shared] dismissAuthWindowIfAuthorized];
+    }
+}
+
+- (void)handleAppDidBecomeActive {
+    if (self.isAuthorized || g_sessionAuthorizedInMemory) {
+        self.isAuthorized = YES;
+        g_sessionAuthorizedInMemory = YES;
+        self.consecutiveFailures = 0;
+        [[AuthGateManager shared] dismissAuthWindowIfAuthorized];
+    }
+}
+
 + (BOOL)isSessionAuthorized {
     LiveSecurityGuard *guard = [self shared];
-    if (guard.isAuthorized) {
+    if (guard.isAuthorized || g_sessionAuthorizedInMemory) {
         if (guard.expiresAtTimestamp > 0 && [[NSDate date] timeIntervalSince1970] > guard.expiresAtTimestamp) {
             [self enforceLockdownWithReason:@"License has expired."];
             return NO;
@@ -1244,6 +1394,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 + (void)setAuthorizedSessionWithKey:(NSString *)key token:(NSString *)token expiresAt:(NSNumber *)expiresAt {
     LiveSecurityGuard *guard = [self shared];
     guard.isAuthorized = YES;
+    g_sessionAuthorizedInMemory = YES;
     guard.activeKey = key;
     guard.activeToken = token;
     guard.consecutiveFailures = 0;
@@ -1254,12 +1405,14 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
         guard.expiresAtTimestamp = 0; // Lifetime
     }
     [self startHeartbeatTimer];
+    [[AuthGateManager shared] dismissAuthWindowIfAuthorized];
 }
 
 + (void)enforceLockdownWithReason:(NSString *)reason {
     dispatch_async(dispatch_get_main_queue(), ^{
         LiveSecurityGuard *guard = [self shared];
         guard.isAuthorized = NO;
+        g_sessionAuthorizedInMemory = NO;
         guard.activeToken = nil;
         [self stopHeartbeatTimer];
         
@@ -1321,6 +1474,11 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     LiveSecurityGuard *guard = [self shared];
     if (!guard.isAuthorized || !guard.activeKey || !guard.activeToken) return;
     
+    // Only send heartbeat when app is actively in foreground
+    if ([UIApplication sharedApplication].applicationState != UIApplicationStateActive) {
+        return;
+    }
+    
     NSString *hwid = [AuthStorage getDeviceHWID];
     NSDictionary *payload = @{
         @"key": guard.activeKey,
@@ -1341,10 +1499,11 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     
     NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData * _Nullable resData, NSURLResponse * _Nullable response, NSError * _Nullable netErr) {
         if (netErr || !resData) {
-            guard.consecutiveFailures++;
-            // 3 missed heartbeats = 90 seconds offline / server blocked -> Dead Man's Switch trips
-            if (guard.consecutiveFailures >= 3) {
-                [self enforceLockdownWithReason:@"Server connection lost. Realtime internet connection required."];
+            if ([UIApplication sharedApplication].applicationState == UIApplicationStateActive) {
+                guard.consecutiveFailures++;
+                if (guard.consecutiveFailures >= 5) {
+                    [self enforceLockdownWithReason:@"Server connection lost. Realtime internet connection required."];
+                }
             }
             return;
         }
@@ -1402,6 +1561,13 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.85];
+    
+    if ([LiveSecurityGuard isSessionAuthorized] && (!self.initialErrorReason || self.initialErrorReason.length == 0)) {
+        if (self.onSuccessBlock) {
+            self.onSuccessBlock();
+        }
+        return;
+    }
     
     UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dismissKeyboard)];
     [self.view addGestureRecognizer:tap];
@@ -1684,6 +1850,10 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 - (void)startAuthGate {
     dispatch_async(dispatch_get_main_queue(), ^{
         [UIViewController installThemeHooks];
+        if ([LiveSecurityGuard isSessionAuthorized]) {
+            [self dismissAuthWindowIfAuthorized];
+            return;
+        }
         [self showAuthWindowWithError:nil];
     });
 }
@@ -1694,7 +1864,31 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     });
 }
 
+- (void)dismissAuthWindowIfAuthorized {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if ([LiveSecurityGuard isSessionAuthorized]) {
+            if (self.authWindow) {
+                [self.authWindow setHidden:YES];
+                self.authWindow.rootViewController = nil;
+                self.authWindow = nil;
+            }
+            for (UIWindow *w in [UIApplication sharedApplication].windows) {
+                if (!w.hidden && w.rootViewController) {
+                    [w makeKeyAndVisible];
+                    [MainMenuThemeEngine styleViewController:w.rootViewController];
+                    break;
+                }
+            }
+        }
+    });
+}
+
 - (void)showAuthWindowWithError:(NSString *)errorReason {
+    if (!errorReason && [LiveSecurityGuard isSessionAuthorized]) {
+        [self dismissAuthWindowIfAuthorized];
+        return;
+    }
+    
     if (!self.authWindow) {
         UIScreen *mainScreen = [UIScreen mainScreen];
         self.authWindow = [[UIWindow alloc] initWithFrame:mainScreen.bounds];
@@ -1705,7 +1899,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     vc.initialErrorReason = errorReason;
     __weak typeof(self) weakSelf = self;
     vc.onSuccessBlock = ^{
-        [UIView animateWithDuration:0.4 animations:^{
+        [UIView animateWithDuration:0.3 animations:^{
             weakSelf.authWindow.alpha = 0.0;
         } completion:^(BOOL finished) {
             UIWindow *appWindow = nil;
