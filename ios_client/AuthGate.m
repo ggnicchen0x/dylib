@@ -55,25 +55,69 @@
 @implementation AuthStorage
 
 + (void)saveString:(NSString *)value forKey:(NSString *)key {
+    if (!value || !key) return;
+    
+    // 1. Save to iOS Keychain (persists across reinstalls and resigning)
+    NSData *data = [value dataUsingEncoding:NSUTF8StringEncoding];
+    NSDictionary *deleteQuery = @{
+        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrAccount: key,
+        (__bridge id)kSecAttrService: @"com.externalff.auth.service"
+    };
+    SecItemDelete((__bridge CFDictionaryRef)deleteQuery);
+    
+    NSDictionary *addQuery = @{
+        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrAccount: key,
+        (__bridge id)kSecAttrService: @"com.externalff.auth.service",
+        (__bridge id)kSecValueData: data,
+        (__bridge id)kSecAttrAccessible: (__bridge id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+    };
+    SecItemAdd((__bridge CFDictionaryRef)addQuery, NULL);
+    
+    // 2. Also save to NSUserDefaults as secondary backup
     [[NSUserDefaults standardUserDefaults] setObject:value forKey:key];
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
 + (NSString *)getStringForKey:(NSString *)key {
+    if (!key) return nil;
+    
+    // 1. Try reading from iOS Keychain first
+    NSDictionary *query = @{
+        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrAccount: key,
+        (__bridge id)kSecAttrService: @"com.externalff.auth.service",
+        (__bridge id)kSecReturnData: (__bridge id)kCFBooleanTrue,
+        (__bridge id)kSecMatchLimit: (__bridge id)kSecMatchLimitOne
+    };
+    
+    CFTypeRef result = NULL;
+    OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
+    if (status == errSecSuccess && result != NULL) {
+        NSData *data = (__bridge_transfer NSData *)result;
+        NSString *val = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        if (val && val.length > 0) return val;
+    }
+    
+    // 2. Fallback to NSUserDefaults
     return [[NSUserDefaults standardUserDefaults] stringForKey:key];
 }
 
 + (NSString *)getDeviceHWID {
+    // 1. Check permanent iOS Keychain
     NSString *cachedHWID = [self getStringForKey:KEYCHAIN_HWID];
     if (cachedHWID && cachedHWID.length > 0) {
         return cachedHWID;
     }
     
+    // 2. Query Apple's identifierForVendor
     NSString *vendorID = [[[UIDevice currentDevice] identifierForVendor] UUIDString];
     if (!vendorID || vendorID.length == 0) {
         vendorID = [[NSUUID UUID] UUIDString];
     }
     
+    // 3. Save permanently to iOS Keychain
     [self saveString:vendorID forKey:KEYCHAIN_HWID];
     return vendorID;
 }
