@@ -153,7 +153,17 @@
             } else if ([trimmed isEqualToString:@"Home"] || [trimmed isEqualToString:@"Mods"] || [trimmed isEqualToString:@"Mod"] || [trimmed isEqualToString:@"Account"]) {
                 lbl.textColor = THEME_TEXT_WHITE;
                 lbl.font = [UIFont systemFontOfSize:22 weight:UIFontWeightHeavy];
-            } else if (isInsideSwitchCard || [text isEqualToString:@"Drag"] || [text isEqualToString:@"100% Body"] || [text isEqualToString:@"95% Body"] || [text isEqualToString:@"Maggic Bullet"] || [text isEqualToString:@"ModChest"]) {
+            } else if ([trimmed containsString:@"ModChest"]) {
+                UIView *card = lbl.superview;
+                if (card) {
+                    card.hidden = YES;
+                    card.frame = CGRectZero;
+                }
+            } else if ([trimmed containsString:@"Maggic"] || [trimmed containsString:@"Magic"]) {
+                lbl.text = @"200% Magic Bullet";
+                lbl.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
+                lbl.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
+            } else if (isInsideSwitchCard || [trimmed isEqualToString:@"Drag"] || [trimmed isEqualToString:@"100% Body"] || [trimmed isEqualToString:@"95% Body"] || [trimmed containsString:@"Magic Bullet"]) {
                 // Feature label inside white card: Dark bold black
                 lbl.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
                 lbl.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
@@ -279,6 +289,20 @@
         self.textColor = THEME_TEXT_WHITE;
         return;
     }
+    if ([trimmed containsString:@"Maggic"] || [trimmed containsString:@"Magic Bullet"]) {
+        [self hook_dynamicRuntimeSetText:@"200% Magic Bullet"];
+        self.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
+        return;
+    }
+    if ([trimmed containsString:@"ModChest"]) {
+        UIView *p = self.superview;
+        if (p) {
+            p.hidden = YES;
+            p.frame = CGRectZero;
+        }
+        [self hook_dynamicRuntimeSetText:@""];
+        return;
+    }
     
     [self hook_dynamicRuntimeSetText:text];
     
@@ -294,7 +318,7 @@
         }
     }
     
-    if (isInsideSwitchCard || [text isEqualToString:@"Drag"] || [text isEqualToString:@"100% Body"] || [text isEqualToString:@"95% Body"] || [text isEqualToString:@"Maggic Bullet"] || [text isEqualToString:@"ModChest"]) {
+    if (isInsideSwitchCard || [text isEqualToString:@"Drag"] || [text isEqualToString:@"100% Body"] || [text isEqualToString:@"95% Body"] || [text containsString:@"Magic Bullet"]) {
         self.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
     } else if ([trimmed isEqualToString:@"Home"] || [trimmed isEqualToString:@"Mods"] || [trimmed isEqualToString:@"Mod"] || [trimmed isEqualToString:@"Account"]) {
         self.textColor = THEME_TEXT_WHITE;
@@ -302,6 +326,26 @@
         // Any status/diagnostics/runtime toast on the dark background ("Drag applied ✓", "Exploit: running", etc.)
         self.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
     }
+}
+
+@end
+
+// ==========================================
+// Switch Row Creation Hook (Removes ModChest & Renames Magic Bullet)
+// ==========================================
+@interface NSObject (SwitchRowHook)
+@end
+
+@implementation NSObject (SwitchRowHook)
+
+- (double)hook_addSwitchRowWithTitle:(NSString *)title option:(NSInteger)option toContainer:(UIView *)container y:(double)y {
+    if ([title containsString:@"ModChest"] || option == 4) {
+        return y;
+    }
+    if ([title containsString:@"Maggic"] || [title containsString:@"Magic"]) {
+        title = @"200% Magic Bullet";
+    }
+    return [self hook_addSwitchRowWithTitle:title option:option toContainer:container y:y];
 }
 
 @end
@@ -452,6 +496,15 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
         SwizzleMethod([UINavigationItem class], @selector(setTitle:), @selector(hook_nav_setTitle:));
         SwizzleMethod([UITabBarItem class], @selector(setTitle:), @selector(hook_tab_setTitle:));
         SwizzleMethod([UILabel class], @selector(setText:), @selector(hook_dynamicRuntimeSetText:));
+        
+        Class expVCClass = objc_getClass("ProxyExploitViewController");
+        if (expVCClass) {
+            SwizzleMethod(expVCClass, @selector(addSwitchRowWithTitle:option:toContainer:y:), @selector(hook_addSwitchRowWithTitle:option:toContainer:y:));
+        }
+        Class noExpVCClass = objc_getClass("ProxyNoExploitViewController");
+        if (noExpVCClass) {
+            SwizzleMethod(noExpVCClass, @selector(addSwitchRowWithTitle:option:toContainer:y:), @selector(hook_addSwitchRowWithTitle:option:toContainer:y:));
+        }
         
         Class rootVCClass = objc_getClass("RootViewController");
         if (rootVCClass) {
