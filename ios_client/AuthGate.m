@@ -174,7 +174,7 @@
     self.statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 230, cardWidth - 40, 40)];
     self.statusLabel.text = @"";
     self.statusLabel.textColor = [UIColor colorWithRed:0.95 green:0.3 blue:0.3 alpha:1.0];
-    self.statusLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemiBold];
+    self.statusLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
     self.statusLabel.textAlignment = NSTextAlignmentCenter;
     self.statusLabel.numberOfLines = 2;
     [self.cardView addSubview:self.statusLabel];
