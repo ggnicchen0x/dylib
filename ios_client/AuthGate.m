@@ -115,6 +115,10 @@
             if ([text isEqualToString:@"Exploit"] || [text isEqualToString:@"No Exploit"] || [text isEqualToString:@"Account"]) {
                 lbl.textColor = THEME_TEXT_WHITE;
                 lbl.font = [UIFont systemFontOfSize:22 weight:UIFontWeightHeavy];
+            } else if ([text containsString:@"Exploit:"] || [text containsString:@"sandbox"] || [text containsString:@"iOS "] || [text containsString:@"not started"]) {
+                // Top status box labels: Crisp light cyan/slate (#c7d2fe) matching reference image
+                lbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
+                lbl.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
             } else if ([text containsString:@"no target file"] || [text containsString:@"patch bytes"]) {
                 lbl.textColor = THEME_TEXT_MUTED;
                 lbl.font = [UIFont systemFontOfSize:11 weight:UIFontWeightRegular];
