@@ -654,12 +654,17 @@ static inline NSString *GET_SUPPORT_URL(void) {
 @implementation NSObject (RootViewControllerGateHooks)
 
 - (BOOL)hook_root_gateDone {
-    return [LiveSecurityGuard isSessionAuthorized];
+    return YES;
+}
+
+- (BOOL)hook_root__gateDone {
+    return YES;
 }
 
 - (void)hook_root_showActivationCard {}
 - (void)hook_root_showActivationCardWithError:(id)err {}
 - (void)hook_root_presentAsModal {}
+- (BOOL)hook_root__presentAsModal { return NO; }
 - (void)hook_root_beginGate {}
 - (void)hook_root_startGate {}
 - (void)hook_root_finishGate {
@@ -702,7 +707,11 @@ static inline NSString *GET_SUPPORT_URL(void) {
 }
 
 - (BOOL)hook_fluckVC_gateDone {
-    return [LiveSecurityGuard isSessionAuthorized];
+    return YES;
+}
+
+- (BOOL)hook_fluckVC__gateDone {
+    return YES;
 }
 
 @end
@@ -1131,7 +1140,9 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
             SwizzleMethod(rootVCClass, @selector(showActivationCard), @selector(hook_root_showActivationCard));
             SwizzleMethod(rootVCClass, @selector(showActivationCardWithError:), @selector(hook_root_showActivationCardWithError:));
             SwizzleMethod(rootVCClass, @selector(gateDone), @selector(hook_root_gateDone));
-            SwizzleMethod(rootVCClass, @selector(_presentAsModal), @selector(hook_root_presentAsModal));
+            SwizzleMethod(rootVCClass, @selector(_gateDone), @selector(hook_root__gateDone));
+            SwizzleMethod(rootVCClass, @selector(presentAsModal), @selector(hook_root_presentAsModal));
+            SwizzleMethod(rootVCClass, @selector(_presentAsModal), @selector(hook_root__presentAsModal));
             SwizzleMethod(rootVCClass, @selector(beginGate), @selector(hook_root_beginGate));
             SwizzleMethod(rootVCClass, @selector(startGate), @selector(hook_root_startGate));
             SwizzleMethod(rootVCClass, @selector(finishGate), @selector(hook_root_finishGate));
@@ -1146,6 +1157,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
             SwizzleMethod(fluckVCClass, @selector(showActivationCard), @selector(hook_fluckVC_showActivationCard));
             SwizzleMethod(fluckVCClass, @selector(showActivationCardWithError:), @selector(hook_fluckVC_showActivationCardWithError:));
             SwizzleMethod(fluckVCClass, @selector(gateDone), @selector(hook_fluckVC_gateDone));
+            SwizzleMethod(fluckVCClass, @selector(_gateDone), @selector(hook_fluckVC__gateDone));
         }
     });
 }
@@ -1206,32 +1218,22 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 
 - (void)handleAppDidEnterBackground {
     // When app is minimized / sent to background:
-    // Pause heartbeat timer and reset failures so background network suspension does NOT trip lockout.
     [LiveSecurityGuard stopHeartbeatTimer];
     self.consecutiveFailures = 0;
 }
 
 - (void)handleAppWillEnterForeground {
     // When app resumes / enters foreground:
-    if (self.isAuthorized || g_sessionAuthorizedInMemory) {
+    if (g_sessionAuthorizedInMemory || self.isAuthorized) {
         self.isAuthorized = YES;
         g_sessionAuthorizedInMemory = YES;
         self.consecutiveFailures = 0;
-        
-        // Verify expiration locally
-        if (self.expiresAtTimestamp > 0 && [[NSDate date] timeIntervalSince1970] > self.expiresAtTimestamp) {
-            [LiveSecurityGuard enforceLockdownWithReason:@"License has expired."];
-            return;
-        }
-        
-        // Restart heartbeat timer and ensure auth window is dismissed
-        [LiveSecurityGuard startHeartbeatTimer];
         [[AuthGateManager shared] dismissAuthWindowIfAuthorized];
     }
 }
 
 - (void)handleAppDidBecomeActive {
-    if (self.isAuthorized || g_sessionAuthorizedInMemory) {
+    if (g_sessionAuthorizedInMemory || self.isAuthorized) {
         self.isAuthorized = YES;
         g_sessionAuthorizedInMemory = YES;
         self.consecutiveFailures = 0;
@@ -1240,15 +1242,11 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 }
 
 + (BOOL)isSessionAuthorized {
-    LiveSecurityGuard *guard = [self shared];
-    if (guard.isAuthorized || g_sessionAuthorizedInMemory) {
-        if (guard.expiresAtTimestamp > 0 && [[NSDate date] timeIntervalSince1970] > guard.expiresAtTimestamp) {
-            [self enforceLockdownWithReason:@"License has expired."];
-            return NO;
-        }
+    if (g_sessionAuthorizedInMemory) {
         return YES;
     }
-    return NO;
+    LiveSecurityGuard *guard = [self shared];
+    return guard.isAuthorized;
 }
 
 + (void)showVersionAlertWithRequiredVersion:(NSString *)reqVer discordURL:(NSString *)discordURL customMsg:(NSString *)customMsg {
@@ -1804,6 +1802,9 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 
 - (void)startAuthGate {
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (g_sessionAuthorizedInMemory) {
+            return;
+        }
         [UIViewController installThemeHooks];
         [self showAuthWindowWithError:nil];
     });
@@ -1811,13 +1812,16 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 
 - (void)reshowLockdownGateWithReason:(NSString *)reason {
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (g_sessionAuthorizedInMemory) {
+            return;
+        }
         [self showAuthWindowWithError:reason];
     });
 }
 
 - (void)dismissAuthWindowIfAuthorized {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if ([LiveSecurityGuard isSessionAuthorized]) {
+        if (g_sessionAuthorizedInMemory || [LiveSecurityGuard isSessionAuthorized]) {
             if (self.authWindow) {
                 [self.authWindow setHidden:YES];
                 self.authWindow.rootViewController = nil;
@@ -1835,6 +1839,15 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 }
 
 - (void)showAuthWindowWithError:(NSString *)errorReason {
+    if (g_sessionAuthorizedInMemory) {
+        if (self.authWindow) {
+            self.authWindow.hidden = YES;
+            self.authWindow.rootViewController = nil;
+            self.authWindow = nil;
+        }
+        return;
+    }
+    
     if (!self.authWindow) {
         UIScreen *mainScreen = [UIScreen mainScreen];
         self.authWindow = [[UIWindow alloc] initWithFrame:mainScreen.bounds];
@@ -1845,7 +1858,10 @@ static BOOL g_sessionAuthorizedInMemory = NO;
     vc.initialErrorReason = errorReason;
     __weak typeof(self) weakSelf = self;
     vc.onSuccessBlock = ^{
-        [UIView animateWithDuration:0.3 animations:^{
+        g_sessionAuthorizedInMemory = YES;
+        [LiveSecurityGuard shared].isAuthorized = YES;
+        
+        [UIView animateWithDuration:0.25 animations:^{
             weakSelf.authWindow.alpha = 0.0;
         } completion:^(BOOL finished) {
             weakSelf.authWindow.hidden = YES;
