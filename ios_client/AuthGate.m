@@ -354,10 +354,8 @@
                     }
                 }
                 if (appWindow) {
+                    appWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
                     [appWindow makeKeyAndVisible];
-                    if (appWindow.rootViewController) {
-                        [MainMenuThemeEngine styleViewController:appWindow.rootViewController];
-                    }
                 }
                 
                 weakSelf.authWindow.hidden = YES;
