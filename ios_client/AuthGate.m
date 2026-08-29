@@ -13,7 +13,7 @@
 #define KEYCHAIN_KEY @"com.proxyvn.auth.license_key"
 #define KEYCHAIN_HWID @"com.proxyvn.auth.device_hwid"
 
-// Exact Theme Palette (Matching Picture 2)
+// Exact Theme Palette (Matching Login Screen & Picture 2)
 #define COLOR_OBSIDIAN_BG   [UIColor colorWithRed:0.04 green:0.05 blue:0.08 alpha:1.0] // #0a0d14 Deep Obsidian
 #define COLOR_DARK_CARD     [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.98] // #141c2e Dark Frosted Card
 #define COLOR_CARD_BORDER   [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:0.35] // #6366f1 Glowing Indigo Border
@@ -60,24 +60,78 @@
 @end
 
 // ==========================================
-// Safe BFS One-Time Theme Engine
+// Method Swizzling Utility
 // ==========================================
-@interface SafeAppThemeStyler : NSObject
-+ (void)applyDarkThemeSafelyToViewController:(UIViewController *)vc;
+static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
+    if (!cls) return;
+    Method origMethod = class_getInstanceMethod(cls, origSel);
+    Method newMethod = class_getInstanceMethod(cls, newSel);
+    if (!origMethod || !newMethod) return;
+    
+    BOOL didAdd = class_addMethod(cls, origSel, method_getImplementation(newMethod), method_getTypeEncoding(newMethod));
+    if (didAdd) {
+        class_replaceMethod(cls, newSel, method_getImplementation(origMethod), method_getTypeEncoding(origMethod));
+    } else {
+        method_exchangeImplementations(origMethod, newMethod);
+    }
+}
+
+// ==========================================
+// Precise Switch Card & TabBar Theming
+// ==========================================
+
+// 1. Hook UISwitch didMoveToSuperview to recolor the entire switch card container
+@interface UISwitch (CardRecolorHook)
 @end
 
-@implementation SafeAppThemeStyler
+@implementation UISwitch (CardRecolorHook)
 
-+ (void)applyDarkThemeSafelyToViewController:(UIViewController *)vc {
-    if (!vc || !vc.view) return;
-    if ([NSStringFromClass([vc class]) containsString:@"AuthGate"]) return;
+- (void)hook_switchDidMoveToSuperview {
+    [self hook_switchDidMoveToSuperview];
+    self.onTintColor = COLOR_NEON_INDIGO;
+    self.thumbTintColor = [UIColor whiteColor];
     
-    UIView *rootView = vc.view;
-    rootView.backgroundColor = COLOR_OBSIDIAN_BG;
+    // Style the immediate parent card
+    UIView *card = self.superview;
+    if (card && ![card isKindOfClass:[UIScrollView class]] && ![card isKindOfClass:[UITableView class]]) {
+        card.backgroundColor = COLOR_DARK_CARD;
+        card.layer.cornerRadius = 14;
+        card.layer.borderColor = COLOR_CARD_BORDER.CGColor;
+        card.layer.borderWidth = 1.0;
+        
+        // Recolor all inner subviews and labels inside the card
+        for (UIView *sub in card.subviews) {
+            if ([sub isKindOfClass:[UILabel class]]) {
+                ((UILabel *)sub).textColor = COLOR_WHITE_TEXT;
+                ((UILabel *)sub).font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
+            } else if (![sub isKindOfClass:[UISwitch class]]) {
+                sub.backgroundColor = COLOR_DARK_CARD;
+                sub.layer.cornerRadius = 14;
+            }
+        }
+    }
+}
+
+@end
+
+// 2. Hook UIViewController viewWillAppear for Page Background & Tab Bar Appearance
+@interface UIViewController (ThemeAppearanceHook)
+@end
+
+@implementation UIViewController (ThemeAppearanceHook)
+
+- (void)hook_themeViewWillAppear:(BOOL)animated {
+    [self hook_themeViewWillAppear:animated];
+    if ([NSStringFromClass([self class]) containsString:@"AuthGate"]) return;
     
-    // Style Tab Bar if present
-    if (vc.tabBarController) {
-        UITabBar *tb = vc.tabBarController.tabBar;
+    // Set page background
+    if (self.view) {
+        self.view.backgroundColor = COLOR_OBSIDIAN_BG;
+    }
+    
+    // Set Tab Bar Dark Appearance
+    if (self.tabBarController) {
+        UITabBar *tb = self.tabBarController.tabBar;
         tb.barTintColor = COLOR_OBSIDIAN_BG;
         tb.backgroundColor = COLOR_OBSIDIAN_BG;
         tb.tintColor = COLOR_NEON_INDIGO;
@@ -96,124 +150,48 @@
             tb.scrollEdgeAppearance = tabApp;
         }
     }
-    
-    // Safe Non-Recursive Breadth-First-Search through subviews
-    NSMutableArray *queue = [NSMutableArray arrayWithObject:rootView];
-    while (queue.count > 0) {
-        UIView *v = queue.firstObject;
-        [queue removeObjectAtIndex:0];
+}
+
+@end
+
+// 3. Global Appearance Setup
+@interface GlobalThemeSetup : NSObject
++ (void)installTheme;
+@end
+
+@implementation GlobalThemeSetup
+
++ (void)installTheme {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        SwizzleInstanceMethod([UISwitch class], @selector(didMoveToSuperview), @selector(hook_switchDidMoveToSuperview));
+        SwizzleInstanceMethod([UIViewController class], @selector(viewWillAppear:), @selector(hook_themeViewWillAppear:));
         
-        // 1. Scroll Views & Table Views -> Deep Obsidian Background
-        if ([v isKindOfClass:[UIScrollView class]] || [v isKindOfClass:[UITableView class]] || [v isKindOfClass:[UICollectionView class]]) {
-            v.backgroundColor = COLOR_OBSIDIAN_BG;
-        }
-        // 2. Custom Cards (MenuSwitchItem, V_cardView, etc.)
-        else if ([NSStringFromClass([v class]) containsString:@"SwitchItem"] || 
-                 [NSStringFromClass([v class]) containsString:@"Card"] ||
-                 [NSStringFromClass([v class]) containsString:@"Item"] ||
-                 [v isKindOfClass:[UITableViewCell class]]) {
-            v.backgroundColor = COLOR_DARK_CARD;
-            v.layer.cornerRadius = 14;
-            v.layer.borderColor = COLOR_CARD_BORDER.CGColor;
-            v.layer.borderWidth = 1.0;
-        }
-        // 3. Labels -> Crisp White Text
-        else if ([v isKindOfClass:[UILabel class]]) {
-            UILabel *lbl = (UILabel *)v;
-            NSString *txt = lbl.text ?: @"";
-            if ([txt isEqualToString:@"Logout"]) {
-                lbl.textColor = COLOR_RED_DANGER;
-            } else if ([txt containsString:@"no target file"] || [txt containsString:@"shows your key"] || [txt containsString:@"diagnostics and support"] || [txt containsString:@"patch bytes"]) {
-                lbl.textColor = COLOR_SLATE_MUTED;
-            } else {
-                lbl.textColor = COLOR_WHITE_TEXT;
-                lbl.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
-            }
-        }
-        // 4. Switches -> Neon Indigo Accent
-        else if ([v isKindOfClass:[UISwitch class]]) {
-            UISwitch *sw = (UISwitch *)v;
-            sw.onTintColor = COLOR_NEON_INDIGO;
-            sw.thumbTintColor = [UIColor whiteColor];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [UISwitch appearance].onTintColor = COLOR_NEON_INDIGO;
+            [UISwitch appearance].thumbTintColor = [UIColor whiteColor];
             
-            // Also style immediate parent container as dark card
-            UIView *p = sw.superview;
-            if (p && ![p isKindOfClass:[UIScrollView class]] && ![p isKindOfClass:[UITableView class]]) {
-                p.backgroundColor = COLOR_DARK_CARD;
-                p.layer.cornerRadius = 14;
-                p.layer.borderColor = COLOR_CARD_BORDER.CGColor;
-                p.layer.borderWidth = 1.0;
+            [UITableView appearance].backgroundColor = COLOR_OBSIDIAN_BG;
+            [UITableViewCell appearance].backgroundColor = COLOR_DARK_CARD;
+            
+            UITabBarAppearance *tabApp = [[UITabBarAppearance alloc] init];
+            [tabApp configureWithOpaqueBackground];
+            tabApp.backgroundColor = COLOR_OBSIDIAN_BG;
+            tabApp.stackedLayoutAppearance.normal.iconColor = COLOR_SLATE_MUTED;
+            tabApp.stackedLayoutAppearance.normal.titleTextAttributes = @{NSForegroundColorAttributeName: COLOR_SLATE_MUTED};
+            tabApp.stackedLayoutAppearance.selected.iconColor = COLOR_NEON_INDIGO;
+            tabApp.stackedLayoutAppearance.selected.titleTextAttributes = @{NSForegroundColorAttributeName: COLOR_NEON_INDIGO, NSFontAttributeName: [UIFont systemFontOfSize:10 weight:UIFontWeightBold]};
+            
+            [UITabBar appearance].standardAppearance = tabApp;
+            if (@available(iOS 15.0, *)) {
+                [UITabBar appearance].scrollEdgeAppearance = tabApp;
             }
-        }
-        // 5. Segmented Controls -> Dark Card Background with Indigo Active State
-        else if ([v isKindOfClass:[UISegmentedControl class]]) {
-            UISegmentedControl *sc = (UISegmentedControl *)v;
-            sc.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.95];
-            sc.selectedSegmentTintColor = COLOR_NEON_INDIGO;
-            sc.layer.cornerRadius = 10;
-            sc.layer.borderColor = COLOR_CARD_BORDER.CGColor;
-            sc.layer.borderWidth = 1.0;
-            [sc setTitleTextAttributes:@{NSForegroundColorAttributeName: COLOR_WHITE_TEXT, NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightBold]} forState:UIControlStateSelected];
-            [sc setTitleTextAttributes:@{NSForegroundColorAttributeName: COLOR_SLATE_MUTED, NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightMedium]} forState:UIControlStateNormal];
-        }
-        // 6. Action Buttons
-        else if ([v isKindOfClass:[UIButton class]]) {
-            UIButton *btn = (UIButton *)v;
-            NSString *title = [btn titleForState:UIControlStateNormal] ?: @"";
-            if ([title isEqualToString:@"START"]) {
-                btn.backgroundColor = COLOR_NEON_INDIGO;
-                [btn setTitleColor:COLOR_WHITE_TEXT forState:UIControlStateNormal];
-                btn.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
-                btn.layer.cornerRadius = 10;
-            } else if ([title isEqualToString:@"STOP"]) {
-                btn.backgroundColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.25 alpha:0.25];
-                [btn setTitleColor:[UIColor colorWithRed:1.0 green:0.4 blue:0.4 alpha:1.0] forState:UIControlStateNormal];
-                btn.layer.borderColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.25 alpha:0.5].CGColor;
-                btn.layer.borderWidth = 1.0;
-                btn.layer.cornerRadius = 10;
-            } else if ([title isEqualToString:@"Reset"]) {
-                btn.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.85];
-                [btn setTitleColor:COLOR_NEON_INDIGO forState:UIControlStateNormal];
-                btn.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
-                btn.layer.borderColor = COLOR_CARD_BORDER.CGColor;
-                btn.layer.borderWidth = 1.0;
-                btn.layer.cornerRadius = 10;
-            }
-        }
-        
-        for (UIView *child in v.subviews) {
-            [queue addObject:child];
-        }
-    }
-}
-
-@end
-
-// ==========================================
-// Safe Hook into UIViewController viewDidAppear
-// ==========================================
-static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
-    if (!cls) return;
-    Method origMethod = class_getInstanceMethod(cls, origSel);
-    Method newMethod = class_getInstanceMethod(cls, newSel);
-    if (!origMethod || !newMethod) return;
-    
-    BOOL didAdd = class_addMethod(cls, origSel, method_getImplementation(newMethod), method_getTypeEncoding(newMethod));
-    if (didAdd) {
-        class_replaceMethod(cls, newSel, method_getImplementation(origMethod), method_getTypeEncoding(origMethod));
-    } else {
-        method_exchangeImplementations(origMethod, newMethod);
-    }
-}
-
-@interface UIViewController (SafeThemeHook)
-@end
-
-@implementation UIViewController (SafeThemeHook)
-
-- (void)safe_viewDidAppear:(BOOL)animated {
-    [self safe_viewDidAppear:animated];
-    [SafeAppThemeStyler applyDarkThemeSafelyToViewController:self];
+            [UITabBar appearance].barTintColor = COLOR_OBSIDIAN_BG;
+            [UITabBar appearance].backgroundColor = COLOR_OBSIDIAN_BG;
+            [UITabBar appearance].tintColor = COLOR_NEON_INDIGO;
+            [UITabBar appearance].unselectedItemTintColor = COLOR_SLATE_MUTED;
+        });
+    });
 }
 
 @end
@@ -505,10 +483,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 
 - (void)startAuthGate {
     dispatch_async(dispatch_get_main_queue(), ^{
-        static dispatch_once_t hookToken;
-        dispatch_once(&hookToken, ^{
-            SwizzleMethod([UIViewController class], @selector(viewDidAppear:), @selector(safe_viewDidAppear:));
-        });
+        [GlobalThemeSetup installTheme];
         
         UIScreen *mainScreen = [UIScreen mainScreen];
         self.authWindow = [[UIWindow alloc] initWithFrame:mainScreen.bounds];
@@ -531,7 +506,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
                 if (appWindow) {
                     appWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
                     if (appWindow.rootViewController) {
-                        [SafeAppThemeStyler applyDarkThemeSafelyToViewController:appWindow.rootViewController];
+                        appWindow.rootViewController.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
                     }
                     [appWindow makeKeyAndVisible];
                 }
@@ -554,6 +529,8 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 // ==========================================
 __attribute__((constructor))
 static void InitAuthGate() {
+    [GlobalThemeSetup installTheme];
+    
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
                                                       object:nil
                                                        queue:[NSOperationQueue mainQueue]
