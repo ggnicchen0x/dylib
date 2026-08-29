@@ -113,6 +113,101 @@
     }
     
     [self styleViewHierarchy:vc.view isRoot:YES];
+    [self realignMenuLayout:vc];
+}
+
++ (void)realignMenuLayout:(UIViewController *)vc {
+    if (!vc || !vc.view) return;
+    
+    // Find scrollView if present
+    UIView *container = vc.view;
+    for (UIView *sub in vc.view.subviews) {
+        if ([sub isKindOfClass:[UIScrollView class]]) {
+            container = sub;
+            break;
+        }
+    }
+    
+    // Find aimContainer, visualsContainer, resetButton, and resultLabel
+    UIView *aimContainer = nil;
+    UIButton *resetButton = nil;
+    UILabel *resultLabel = nil;
+    
+    for (UIView *sub in container.subviews) {
+        if ([sub isKindOfClass:[UIButton class]]) {
+            UIButton *btn = (UIButton *)sub;
+            NSString *t = [btn titleForState:UIControlStateNormal] ?: @"";
+            if ([t isEqualToString:@"Reset"]) {
+                resetButton = btn;
+            }
+        } else if ([sub isKindOfClass:[UILabel class]]) {
+            UILabel *lbl = (UILabel *)sub;
+            // resultLabel is a multiline label inside the scroll view that isn't a child of a card
+            if (lbl.numberOfLines != 1 && lbl.superview == container) {
+                resultLabel = lbl;
+            }
+        } else if (sub.subviews.count > 0 && ![sub isKindOfClass:[UISegmentedControl class]]) {
+            // Check if this subview holds switch cards
+            BOOL hasSwitches = NO;
+            for (UIView *child in sub.subviews) {
+                for (UIView *grandChild in child.subviews) {
+                    if ([grandChild isKindOfClass:[UISwitch class]]) {
+                        hasSwitches = YES;
+                        break;
+                    }
+                }
+                if ([child isKindOfClass:[UISwitch class]]) {
+                    hasSwitches = YES;
+                    break;
+                }
+            }
+            if (hasSwitches) {
+                aimContainer = sub;
+            }
+        }
+    }
+    
+    if (aimContainer) {
+        // Calculate bottom of last visible card inside aimContainer
+        CGFloat maxY = 0;
+        for (UIView *card in aimContainer.subviews) {
+            if (!card.hidden && card.frame.size.height > 0) {
+                CGFloat bottom = CGRectGetMaxY(card.frame);
+                if (bottom > maxY) maxY = bottom;
+            }
+        }
+        
+        if (maxY > 0) {
+            // Resize aimContainer to fit remaining cards tightly
+            CGRect aimFrame = aimContainer.frame;
+            aimFrame.size.height = maxY;
+            aimContainer.frame = aimFrame;
+            
+            CGFloat currentY = CGRectGetMaxY(aimFrame) + 16.0;
+            
+            if (resetButton) {
+                CGRect rFrame = resetButton.frame;
+                rFrame.origin.y = currentY;
+                resetButton.frame = rFrame;
+                currentY = CGRectGetMaxY(rFrame) + 14.0;
+            }
+            
+            if (resultLabel) {
+                CGRect lFrame = resultLabel.frame;
+                lFrame.origin.y = currentY;
+                resultLabel.frame = lFrame;
+            }
+            
+            if ([container isKindOfClass:[UIScrollView class]]) {
+                UIScrollView *sv = (UIScrollView *)container;
+                CGSize cs = sv.contentSize;
+                if (resultLabel) {
+                    cs.height = CGRectGetMaxY(resultLabel.frame) + 40.0;
+                }
+                sv.contentSize = cs;
+            }
+        }
+    }
 }
 
 + (void)styleViewHierarchy:(UIView *)view isRoot:(BOOL)isRoot {
