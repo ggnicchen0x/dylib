@@ -13,9 +13,9 @@
 #define KEYCHAIN_KEY @"com.proxyvn.auth.license_key"
 #define KEYCHAIN_HWID @"com.proxyvn.auth.device_hwid"
 
-// Exact Unified Cyberpunk Theme Palette
+// Exact Cyberpunk Theme Palette
 #define THEME_BG          [UIColor colorWithRed:0.04 green:0.05 blue:0.08 alpha:1.0] // #0a0d14 Deep Obsidian
-#define THEME_CARD_BG     [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.98] // #141c2e Dark Frosted Glass Card
+#define THEME_CARD_BG     [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.98] // #141c2e Dark Frosted Card
 #define THEME_CARD_BORDER [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:0.35] // #6366f1 Glowing Indigo Border
 #define THEME_ACCENT      [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:1.0] // #6366f1 Neon Indigo
 #define THEME_TEXT_WHITE  [UIColor colorWithRed:0.97 green:0.98 blue:0.99 alpha:1.0] // #f8fafc Clean Crisp White
@@ -60,28 +60,72 @@
 @end
 
 // ==========================================
-// Real-Time View Theme Styler
+// Theme Engine for Main App
 // ==========================================
-@interface CyberThemeManager : NSObject
-+ (void)applyThemeToView:(UIView *)view;
+@interface MainThemeEngine : NSObject
++ (void)themeController:(UIViewController *)vc;
++ (void)themeViewRecursively:(UIView *)view isRoot:(BOOL)isRoot;
 @end
 
-@implementation CyberThemeManager
+@implementation MainThemeEngine
 
-+ (void)applyThemeToView:(UIView *)view {
++ (void)themeController:(UIViewController *)vc {
+    if (!vc || !vc.view) return;
+    if ([NSStringFromClass([vc class]) containsString:@"AuthGate"]) return;
+    
+    vc.view.backgroundColor = THEME_BG;
+    
+    // Style Tab Bar if present
+    if (vc.tabBarController) {
+        UITabBar *tb = vc.tabBarController.tabBar;
+        tb.barTintColor = THEME_BG;
+        tb.backgroundColor = THEME_BG;
+        tb.tintColor = THEME_ACCENT;
+        tb.unselectedItemTintColor = THEME_TEXT_MUTED;
+        tb.layer.borderColor = [UIColor colorWithRed:0.2 green:0.25 blue:0.35 alpha:0.3].CGColor;
+        tb.layer.borderWidth = 0.5;
+        
+        UITabBarAppearance *tabApp = [[UITabBarAppearance alloc] init];
+        [tabApp configureWithOpaqueBackground];
+        tabApp.backgroundColor = THEME_BG;
+        tabApp.stackedLayoutAppearance.normal.iconColor = THEME_TEXT_MUTED;
+        tabApp.stackedLayoutAppearance.normal.titleTextAttributes = @{NSForegroundColorAttributeName: THEME_TEXT_MUTED};
+        tabApp.stackedLayoutAppearance.selected.iconColor = THEME_ACCENT;
+        tabApp.stackedLayoutAppearance.selected.titleTextAttributes = @{NSForegroundColorAttributeName: THEME_ACCENT, NSFontAttributeName: [UIFont systemFontOfSize:10 weight:UIFontWeightBold]};
+        
+        tb.standardAppearance = tabApp;
+        if (@available(iOS 15.0, *)) {
+            tb.scrollEdgeAppearance = tabApp;
+        }
+    }
+    
+    [self themeViewRecursively:vc.view isRoot:YES];
+}
+
++ (void)themeViewRecursively:(UIView *)view isRoot:(BOOL)isRoot {
     if (!view) return;
     if ([NSStringFromClass([view class]) containsString:@"AuthGate"]) return;
     
-    // 1. Root Screens & Scrollable Canvases -> Deep Obsidian #0a0d14
-    if ([view isKindOfClass:[UIScrollView class]] || 
-        [view isKindOfClass:[UITableView class]] || 
-        [view isKindOfClass:[UICollectionView class]] ||
-        view.superview == nil ||
-        [view.superview isKindOfClass:[UIWindow class]]) {
+    // 1. Root & ScrollView Backgrounds
+    if (isRoot || [view isKindOfClass:[UIScrollView class]] || [view isKindOfClass:[UITableView class]] || [view isKindOfClass:[UICollectionView class]]) {
         view.backgroundColor = THEME_BG;
     }
     
-    // 2. Labels -> White & Bold for features, Slate for metadata
+    // 2. White Container / Cards -> Frosted Dark Card
+    if (!isRoot && ![view isKindOfClass:[UIScrollView class]]) {
+        CGFloat r = 0, g = 0, b = 0, a = 0;
+        if (view.backgroundColor && [view.backgroundColor getRed:&r green:&g blue:&b alpha:&a]) {
+            if (a > 0.1 && (r > 0.70 && g > 0.70 && b > 0.70)) {
+                view.backgroundColor = THEME_CARD_BG;
+                view.layer.cornerRadius = 14;
+                view.layer.borderColor = THEME_CARD_BORDER.CGColor;
+                view.layer.borderWidth = 1.0;
+                view.layer.masksToBounds = YES;
+            }
+        }
+    }
+    
+    // 3. Labels
     if ([view isKindOfClass:[UILabel class]]) {
         UILabel *lbl = (UILabel *)view;
         NSString *txt = lbl.text ?: @"";
@@ -98,19 +142,17 @@
             lbl.textColor = [UIColor colorWithRed:0.75 green:0.80 blue:0.95 alpha:1.0];
             lbl.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
         } else {
-            // "Drag", "100% Body", "95% Body", "Maggic Bullet", "ModChest", "Package Name", "Key", "Device Name", etc.
             lbl.textColor = THEME_TEXT_WHITE;
             lbl.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
         }
     }
     
-    // 3. Switches -> Neon Indigo Active + Parent Card Theming
+    // 4. Switches
     if ([view isKindOfClass:[UISwitch class]]) {
         UISwitch *sw = (UISwitch *)view;
         sw.onTintColor = THEME_ACCENT;
         sw.thumbTintColor = [UIColor whiteColor];
         
-        // Style the row card containing this switch
         UIView *parent = sw.superview;
         if (parent && ![parent isKindOfClass:[UIScrollView class]]) {
             parent.backgroundColor = THEME_CARD_BG;
@@ -121,21 +163,7 @@
         }
     }
     
-    // 4. White / Light Cards (Status Box, Toggle Rows, Table Cells) -> Dark Cyber Card
-    if (![view isKindOfClass:[UIScrollView class]] && ![view isKindOfClass:[UIWindow class]]) {
-        CGFloat r = 0, g = 0, b = 0, a = 0;
-        if (view.backgroundColor && [view.backgroundColor getRed:&r green:&g blue:&b alpha:&a]) {
-            if (a > 0.1 && (r > 0.70 && g > 0.70 && b > 0.70)) { // Any white/light container
-                view.backgroundColor = THEME_CARD_BG;
-                view.layer.cornerRadius = 14;
-                view.layer.borderColor = THEME_CARD_BORDER.CGColor;
-                view.layer.borderWidth = 1.0;
-                view.layer.masksToBounds = YES;
-            }
-        }
-    }
-    
-    // 5. Table Cells (Account page rows)
+    // 5. Table Cells
     if ([view isKindOfClass:[UITableViewCell class]]) {
         UITableViewCell *cell = (UITableViewCell *)view;
         cell.backgroundColor = THEME_CARD_BG;
@@ -146,7 +174,7 @@
         cell.layer.masksToBounds = YES;
     }
     
-    // 6. Segmented Controls ("Free Fire | Free Fire MAX", "Aim | Visuals")
+    // 6. Segmented Controls
     if ([view isKindOfClass:[UISegmentedControl class]]) {
         UISegmentedControl *sc = (UISegmentedControl *)view;
         sc.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.95];
@@ -159,7 +187,7 @@
         [sc setTitleTextAttributes:@{NSForegroundColorAttributeName: THEME_TEXT_MUTED, NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightMedium]} forState:UIControlStateNormal];
     }
     
-    // 7. Buttons (START, STOP, Reset, Logout)
+    // 7. Buttons
     if ([view isKindOfClass:[UIButton class]]) {
         UIButton *btn = (UIButton *)view;
         NSString *title = [btn titleForState:UIControlStateNormal] ?: @"";
@@ -192,37 +220,18 @@
         }
     }
     
-    // 8. Tab Bar (Bottom navigation bar)
-    if ([view isKindOfClass:[UITabBar class]]) {
-        UITabBar *tb = (UITabBar *)view;
-        tb.barTintColor = THEME_BG;
-        tb.backgroundColor = THEME_BG;
-        tb.tintColor = THEME_ACCENT;
-        tb.unselectedItemTintColor = THEME_TEXT_MUTED;
-        tb.layer.borderColor = [UIColor colorWithRed:0.2 green:0.25 blue:0.35 alpha:0.3].CGColor;
-        tb.layer.borderWidth = 0.5;
-        
-        UITabBarAppearance *tabApp = [[UITabBarAppearance alloc] init];
-        [tabApp configureWithOpaqueBackground];
-        tabApp.backgroundColor = THEME_BG;
-        tabApp.stackedLayoutAppearance.normal.iconColor = THEME_TEXT_MUTED;
-        tabApp.stackedLayoutAppearance.normal.titleTextAttributes = @{NSForegroundColorAttributeName: THEME_TEXT_MUTED};
-        tabApp.stackedLayoutAppearance.selected.iconColor = THEME_ACCENT;
-        tabApp.stackedLayoutAppearance.selected.titleTextAttributes = @{NSForegroundColorAttributeName: THEME_ACCENT, NSFontAttributeName: [UIFont systemFontOfSize:10 weight:UIFontWeightBold]};
-        
-        tb.standardAppearance = tabApp;
-        if (@available(iOS 15.0, *)) {
-            tb.scrollEdgeAppearance = tabApp;
-        }
+    // Recurse children
+    for (UIView *child in view.subviews) {
+        [self themeViewRecursively:child isRoot:NO];
     }
 }
 
 @end
 
 // ==========================================
-// Method Swizzling on UIView layoutSubviews
+// Safe UIViewController Swizzle (NO layoutSubviews loop!)
 // ==========================================
-static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
+static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     Method origMethod = class_getInstanceMethod(cls, origSel);
     Method newMethod = class_getInstanceMethod(cls, newSel);
     if (!origMethod || !newMethod) return;
@@ -235,35 +244,29 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
     }
 }
 
-@interface UIView (CyberThemeHook)
+@interface UIViewController (MainAppThemeHook)
 @end
 
-@implementation UIView (CyberThemeHook)
+@implementation UIViewController (MainAppThemeHook)
 
-- (void)cyber_layoutSubviews {
-    [self cyber_layoutSubviews];
-    [CyberThemeManager applyThemeToView:self];
+- (void)themeHook_viewDidAppear:(BOOL)animated {
+    [self themeHook_viewDidAppear:animated];
+    if (![NSStringFromClass([self class]) containsString:@"AuthGate"]) {
+        [MainThemeEngine themeController:self];
+    }
 }
 
-@end
-
-@interface ThemeBootstrap : NSObject
-+ (void)start;
-@end
-
-@implementation ThemeBootstrap
-
-+ (void)start {
++ (void)installSafeHooks {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        SwizzleInstanceMethod([UIView class], @selector(layoutSubviews), @selector(cyber_layoutSubviews));
+        SwizzleMethod([UIViewController class], @selector(viewDidAppear:), @selector(themeHook_viewDidAppear:));
     });
 }
 
 @end
 
 // ==========================================
-// Auth Gate View Controller
+// Auth Gate View Controller (Fully Responsive)
 // ==========================================
 @interface AuthGateViewController : UIViewController <UITextFieldDelegate>
 @property (nonatomic, strong) UITextField *keyTextField;
@@ -282,8 +285,11 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.85];
+    self.view.userInteractionEnabled = YES;
     
+    // Tap to dismiss keyboard (cancelsTouchesInView = NO is crucial!)
     UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dismissKeyboard)];
+    tap.cancelsTouchesInView = NO;
     [self.view addGestureRecognizer:tap];
 
     [self setupUI];
@@ -300,6 +306,7 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
     UIVisualEffectView *blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
     blurView.frame = self.view.bounds;
     blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    blurView.userInteractionEnabled = NO; // Prevent blur view from swallowing touches!
     [self.view addSubview:blurView];
     
     CGFloat cardWidth = MIN(self.view.bounds.size.width - 40, 360);
@@ -314,6 +321,7 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
     self.cardView.layer.shadowOffset = CGSizeMake(0, 10);
     self.cardView.layer.shadowRadius = 25;
     self.cardView.layer.shadowOpacity = 0.8;
+    self.cardView.userInteractionEnabled = YES;
     self.cardView.autoresizingMask = UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin | UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
     [self.view addSubview:self.cardView];
     
@@ -348,6 +356,7 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
     [self.hwidLabel addGestureRecognizer:hwidTap];
     [self.cardView addSubview:self.hwidLabel];
     
+    // Key Text Field
     self.keyTextField = [[UITextField alloc] initWithFrame:CGRectMake(20, 135, cardWidth - 40, 48)];
     self.keyTextField.backgroundColor = [UIColor colorWithRed:0.05 green:0.07 blue:0.12 alpha:1.0];
     self.keyTextField.textColor = [UIColor whiteColor];
@@ -359,18 +368,22 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
     self.keyTextField.layer.borderWidth = 1.0;
     self.keyTextField.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
     self.keyTextField.autocorrectionType = UITextAutocorrectionTypeNo;
+    self.keyTextField.userInteractionEnabled = YES;
     self.keyTextField.delegate = self;
     self.keyTextField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"ENTER LICENSE KEY" attributes:@{NSForegroundColorAttributeName: [UIColor colorWithWhite:0.4 alpha:1.0]}];
     [self.cardView addSubview:self.keyTextField];
     
+    // Paste Button
     self.pasteButton = [UIButton buttonWithType:UIButtonTypeSystem];
     self.pasteButton.frame = CGRectMake(20, 192, cardWidth - 40, 32);
     [self.pasteButton setTitle:@"📋 Paste from Clipboard" forState:UIControlStateNormal];
     [self.pasteButton setTitleColor:[UIColor colorWithRed:0.6 green:0.7 blue:1.0 alpha:1.0] forState:UIControlStateNormal];
     self.pasteButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
+    self.pasteButton.userInteractionEnabled = YES;
     [self.pasteButton addTarget:self action:@selector(pasteKeyAction) forControlEvents:UIControlEventTouchUpInside];
     [self.cardView addSubview:self.pasteButton];
     
+    // Status Label
     self.statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 230, cardWidth - 40, 40)];
     self.statusLabel.text = @"";
     self.statusLabel.textColor = [UIColor colorWithRed:0.95 green:0.3 blue:0.3 alpha:1.0];
@@ -379,6 +392,7 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
     self.statusLabel.numberOfLines = 2;
     [self.cardView addSubview:self.statusLabel];
     
+    // Login Button
     self.loginButton = [UIButton buttonWithType:UIButtonTypeCustom];
     self.loginButton.frame = CGRectMake(20, 280, cardWidth - 40, 48);
     self.loginButton.backgroundColor = [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:1.0];
@@ -390,22 +404,32 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
     self.loginButton.layer.shadowOffset = CGSizeMake(0, 4);
     self.loginButton.layer.shadowRadius = 10;
     self.loginButton.layer.shadowOpacity = 0.8;
+    self.loginButton.userInteractionEnabled = YES;
     [self.loginButton addTarget:self action:@selector(loginButtonTapped) forControlEvents:UIControlEventTouchUpInside];
     [self.cardView addSubview:self.loginButton];
     
+    // Spinner
     self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     self.spinner.center = CGPointMake(cardWidth / 2, 304);
     self.spinner.color = [UIColor whiteColor];
     self.spinner.hidesWhenStopped = YES;
     [self.cardView addSubview:self.spinner];
     
+    // Support Button
     self.supportButton = [UIButton buttonWithType:UIButtonTypeSystem];
     self.supportButton.frame = CGRectMake(20, 350, cardWidth - 40, 36);
     [self.supportButton setTitle:@"Get Key / Contact Support" forState:UIControlStateNormal];
     [self.supportButton setTitleColor:[UIColor colorWithWhite:0.6 alpha:1.0] forState:UIControlStateNormal];
     self.supportButton.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightRegular];
+    self.supportButton.userInteractionEnabled = YES;
     [self.supportButton addTarget:self action:@selector(openSupport) forControlEvents:UIControlEventTouchUpInside];
     [self.cardView addSubview:self.supportButton];
+}
+
+- (BOOL)textFieldShouldReturn:(UITextField *)textField {
+    [textField resignFirstResponder];
+    [self loginButtonTapped];
+    return YES;
 }
 
 - (void)dismissKeyboard {
@@ -547,11 +571,12 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
 
 - (void)startAuthGate {
     dispatch_async(dispatch_get_main_queue(), ^{
-        [ThemeBootstrap start];
+        [UIViewController installSafeHooks];
         
         UIScreen *mainScreen = [UIScreen mainScreen];
         self.authWindow = [[UIWindow alloc] initWithFrame:mainScreen.bounds];
         self.authWindow.windowLevel = UIWindowLevelAlert + 100;
+        self.authWindow.userInteractionEnabled = YES;
         
         AuthGateViewController *vc = [[AuthGateViewController alloc] init];
         __weak typeof(self) weakSelf = self;
@@ -568,6 +593,9 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
                 }
                 if (appWindow) {
                     [appWindow makeKeyAndVisible];
+                    if (appWindow.rootViewController) {
+                        [MainThemeEngine themeController:appWindow.rootViewController];
+                    }
                 }
                 
                 weakSelf.authWindow.hidden = YES;
@@ -588,7 +616,7 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
 // ==========================================
 __attribute__((constructor))
 static void InitAuthGate() {
-    [ThemeBootstrap start];
+    [UIViewController installSafeHooks];
     
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
                                                       object:nil
