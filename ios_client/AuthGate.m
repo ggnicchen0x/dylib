@@ -124,21 +124,50 @@
                 }
             }
             
-            if ([text isEqualToString:@"Exploit"] || [text isEqualToString:@"No Exploit"] || [text isEqualToString:@"Account"]) {
+            if ([text isEqualToString:@"Logout"]) {
+                lbl.textColor = [UIColor colorWithRed:0.95 green:0.25 blue:0.25 alpha:1.0];
+                lbl.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
+            } else if ([text isEqualToString:@"Exploit"] || [text isEqualToString:@"No Exploit"] || [text isEqualToString:@"Account"]) {
                 lbl.textColor = THEME_TEXT_WHITE;
                 lbl.font = [UIFont systemFontOfSize:22 weight:UIFontWeightHeavy];
+            } else if ([text isEqualToString:@"Package Name"] || [text isEqualToString:@"Key"] || [text isEqualToString:@"Expires On"] || [text isEqualToString:@"Device Name"] || [text isEqualToString:@"Device Model"] || [text isEqualToString:@"iOS Version"] || [text isEqualToString:@"Battery Info"] || [text isEqualToString:@"Jailbreak"]) {
+                // Account item titles: Crisp Clean White
+                lbl.textColor = THEME_TEXT_WHITE;
+                lbl.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+            } else if ([text isEqualToString:@"Lifetime"] || [text isEqualToString:@"No"] || [text isEqualToString:@"—"] || [text isEqualToString:@"-"] || [text containsString:@"iPhone"] || [text containsString:@"iOS"] || [text containsString:@"%"] || [text containsString:@"Unplugged"]) {
+                // Account item values: Light Cyan / Slate
+                lbl.textColor = [UIColor colorWithRed:0.75 green:0.80 blue:0.95 alpha:1.0];
+                lbl.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
+            } else if ([text containsString:@"This shows your key"] || [text containsString:@"Device information"] || [text containsString:@"diagnostics and support"]) {
+                // Account section footer explanations
+                lbl.textColor = [UIColor colorWithRed:0.70 green:0.75 blue:0.88 alpha:1.0];
+                lbl.font = [UIFont systemFontOfSize:12 weight:UIFontWeightRegular];
             } else if (isInsideSwitchCard || [text isEqualToString:@"Drag"] || [text isEqualToString:@"100% Body"] || [text isEqualToString:@"95% Body"] || [text isEqualToString:@"Maggic Bullet"] || [text isEqualToString:@"ModChest"]) {
-                // Feature label inside white card: Dark bold black
+                // Feature label inside white switch card: Dark bold black
                 lbl.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
                 lbl.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
             } else {
-                // All status, diagnostics, and dynamic messages on the dark background ("Drag applied ✓", "Exploit: running", etc.): Bright Light Cyan/Slate
+                // All other status, diagnostics, and dynamic messages on the dark background: Bright Light Cyan/Slate
                 lbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
                 lbl.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
             }
         }
         
-        // 2. Switches & their parent row card
+        // 2. TableViews & Cells (Account Page)
+        else if ([sub isKindOfClass:[UITableView class]]) {
+            UITableView *tv = (UITableView *)sub;
+            tv.backgroundColor = THEME_BG;
+            tv.separatorColor = [UIColor colorWithRed:0.25 green:0.30 blue:0.45 alpha:0.3];
+        }
+        else if ([sub isKindOfClass:[UITableViewCell class]]) {
+            UITableViewCell *cell = (UITableViewCell *)sub;
+            cell.backgroundColor = THEME_CARD_BG;
+            cell.contentView.backgroundColor = THEME_CARD_BG;
+            cell.layer.borderColor = THEME_CARD_BORDER.CGColor;
+            cell.layer.borderWidth = 0.5;
+        }
+        
+        // 3. Switches & their parent row card
         else if ([sub isKindOfClass:[UISwitch class]]) {
             UISwitch *sw = (UISwitch *)sub;
             sw.onTintColor = THEME_ACCENT;
@@ -155,7 +184,7 @@
             }
         }
         
-        // 3. Segmented Controls ("Free Fire | Free Fire MAX", "Aim | Visuals")
+        // 4. Segmented Controls ("Free Fire | Free Fire MAX", "Aim | Visuals")
         else if ([sub isKindOfClass:[UISegmentedControl class]]) {
             UISegmentedControl *sc = (UISegmentedControl *)sub;
             sc.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.9];
@@ -168,7 +197,7 @@
             [sc setTitleTextAttributes:@{NSForegroundColorAttributeName: THEME_TEXT_MUTED, NSFontAttributeName: [UIFont systemFontOfSize:13 weight:UIFontWeightMedium]} forState:UIControlStateNormal];
         }
         
-        // 4. Buttons
+        // 5. Buttons
         else if ([sub isKindOfClass:[UIButton class]]) {
             UIButton *btn = (UIButton *)sub;
             NSString *title = [btn titleForState:UIControlStateNormal] ?: @"";
@@ -188,6 +217,9 @@
                 btn.layer.borderColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.25 alpha:0.5].CGColor;
                 btn.layer.borderWidth = 1.0;
                 btn.layer.cornerRadius = 10;
+            } else if ([title isEqualToString:@"Logout"]) {
+                [btn setTitleColor:[UIColor colorWithRed:0.95 green:0.25 blue:0.25 alpha:1.0] forState:UIControlStateNormal];
+                btn.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
             } else if ([title isEqualToString:@"Reset"]) {
                 btn.backgroundColor = [UIColor colorWithRed:0.08 green:0.11 blue:0.18 alpha:0.8];
                 [btn setTitleColor:THEME_ACCENT forState:UIControlStateNormal];
@@ -198,9 +230,8 @@
             }
         }
         
-        // 5. Status Card / Container boxes
-        else if (sub.subviews.count > 0 && ![sub isKindOfClass:[UIScrollView class]]) {
-            // Check if this container contains the START/STOP button or sandbox status
+        // 6. Status Card / Container boxes
+        else if (sub.subviews.count > 0 && ![sub isKindOfClass:[UIScrollView class]] && ![sub isKindOfClass:[UITableView class]]) {
             BOOL isStatusCard = NO;
             for (UIView *child in sub.subviews) {
                 if ([child isKindOfClass:[UIButton class]]) {
@@ -229,7 +260,7 @@
 @end
 
 // ==========================================
-// Dynamic Label Hook (for Runtime Messages like "Drag applied ✓")
+// Dynamic Label Hook (for Runtime Messages like "Drag applied ✓" & Account)
 // ==========================================
 @interface UILabel (DynamicRuntimeThemeHook)
 @end
@@ -239,6 +270,12 @@
 - (void)hook_dynamicRuntimeSetText:(NSString *)text {
     [self hook_dynamicRuntimeSetText:text];
     if (!text || [NSStringFromClass([self class]) containsString:@"AuthGate"]) return;
+    
+    if ([text isEqualToString:@"Logout"]) {
+        self.textColor = [UIColor colorWithRed:0.95 green:0.25 blue:0.25 alpha:1.0];
+        self.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
+        return;
+    }
     
     // Check if this label is inside a switch row card
     BOOL isInsideSwitchCard = NO;
@@ -254,12 +291,34 @@
     
     if (isInsideSwitchCard || [text isEqualToString:@"Drag"] || [text isEqualToString:@"100% Body"] || [text isEqualToString:@"95% Body"] || [text isEqualToString:@"Maggic Bullet"] || [text isEqualToString:@"ModChest"]) {
         self.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
-    } else if ([text isEqualToString:@"Exploit"] || [text isEqualToString:@"No Exploit"] || [text isEqualToString:@"Account"]) {
+    } else if ([text isEqualToString:@"Exploit"] || [text isEqualToString:@"No Exploit"] || [text isEqualToString:@"Account"] || [text isEqualToString:@"Package Name"] || [text isEqualToString:@"Key"] || [text isEqualToString:@"Expires On"] || [text isEqualToString:@"Device Name"] || [text isEqualToString:@"Device Model"] || [text isEqualToString:@"iOS Version"] || [text isEqualToString:@"Battery Info"] || [text isEqualToString:@"Jailbreak"]) {
         self.textColor = THEME_TEXT_WHITE;
+    } else if ([text isEqualToString:@"Lifetime"] || [text isEqualToString:@"No"] || [text isEqualToString:@"—"] || [text isEqualToString:@"-"] || [text containsString:@"iPhone"] || [text containsString:@"iOS"] || [text containsString:@"%"] || [text containsString:@"Unplugged"]) {
+        self.textColor = [UIColor colorWithRed:0.75 green:0.80 blue:0.95 alpha:1.0];
+    } else if ([text containsString:@"This shows your key"] || [text containsString:@"Device information"] || [text containsString:@"diagnostics and support"]) {
+        self.textColor = [UIColor colorWithRed:0.70 green:0.75 blue:0.88 alpha:1.0];
     } else {
         // Any status/diagnostics/runtime toast on the dark background ("Drag applied ✓", "Exploit: running", etc.)
         self.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
     }
+}
+
+@end
+
+// ==========================================
+// UITableViewCell Hook (for Account Tab)
+// ==========================================
+@interface UITableViewCell (AccountCellThemeHook)
+@end
+
+@implementation UITableViewCell (AccountCellThemeHook)
+
+- (void)hook_cellLayoutSubviews {
+    [self hook_cellLayoutSubviews];
+    self.backgroundColor = THEME_CARD_BG;
+    self.contentView.backgroundColor = THEME_CARD_BG;
+    self.layer.borderColor = THEME_CARD_BORDER.CGColor;
+    self.layer.borderWidth = 0.5;
 }
 
 @end
@@ -289,7 +348,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     [self hook_viewDidLayoutSubviews];
     
     NSString *className = NSStringFromClass([self class]);
-    if ([className containsString:@"Exploit"] || [className containsString:@"Proxy"] || [className containsString:@"Account"]) {
+    if (![className containsString:@"AuthGate"]) {
         [MainMenuThemeEngine styleViewController:self];
     }
 }
@@ -299,6 +358,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     dispatch_once(&onceToken, ^{
         SwizzleMethod([UIViewController class], @selector(viewDidLayoutSubviews), @selector(hook_viewDidLayoutSubviews));
         SwizzleMethod([UILabel class], @selector(setText:), @selector(hook_dynamicRuntimeSetText:));
+        SwizzleMethod([UITableViewCell class], @selector(layoutSubviews), @selector(hook_cellLayoutSubviews));
     });
 }
 
