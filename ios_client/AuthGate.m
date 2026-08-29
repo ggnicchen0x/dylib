@@ -120,93 +120,53 @@
     if (!vc || !vc.view) return;
     
     // Find scrollView if present
-    UIView *container = vc.view;
-    for (UIView *sub in vc.view.subviews) {
-        if ([sub isKindOfClass:[UIScrollView class]]) {
-            container = sub;
-            break;
+    UIScrollView *sv = nil;
+    if ([vc.view isKindOfClass:[UIScrollView class]]) {
+        sv = (UIScrollView *)vc.view;
+    } else {
+        for (UIView *sub in vc.view.subviews) {
+            if ([sub isKindOfClass:[UIScrollView class]]) {
+                sv = (UIScrollView *)sub;
+                break;
+            }
         }
     }
     
-    // Find aimContainer, visualsContainer, resetButton, and resultLabel
-    UIView *aimContainer = nil;
-    UIButton *resetButton = nil;
-    UILabel *resultLabel = nil;
+    if (!sv) return;
     
-    for (UIView *sub in container.subviews) {
+    // Exact Ghidra Layout Geometry:
+    // Original: aimContainer @ y=224.0 (height 300.0, 5 cards). Reset @ y=532.0. ResultLabel @ y=582.0.
+    // 4 Cards (Drag, 100% Body, 95% Body, 200% Magic Bullet): Cards end at y=224+226 = 450.0.
+    // Clean Target Layout:
+    // Reset Button: y = 468.0 (18pt below Magic Bullet card, height 44.0, ends at 512.0)
+    // Result / Status Label: y = 522.0 (10pt below Reset button)
+    // Scroll contentSize height: 670.0
+    
+    for (UIView *sub in sv.subviews) {
         if ([sub isKindOfClass:[UIButton class]]) {
             UIButton *btn = (UIButton *)sub;
             NSString *t = [btn titleForState:UIControlStateNormal] ?: @"";
             if ([t isEqualToString:@"Reset"]) {
-                resetButton = btn;
+                CGRect f = btn.frame;
+                f.origin.y = 468.0;
+                f.size.height = 44.0;
+                btn.frame = f;
             }
         } else if ([sub isKindOfClass:[UILabel class]]) {
             UILabel *lbl = (UILabel *)sub;
-            // resultLabel is a multiline label inside the scroll view that isn't a child of a card
-            if (lbl.numberOfLines != 1 && lbl.superview == container) {
-                resultLabel = lbl;
-            }
-        } else if (sub.subviews.count > 0 && ![sub isKindOfClass:[UISegmentedControl class]]) {
-            // Check if this subview holds switch cards
-            BOOL hasSwitches = NO;
-            for (UIView *child in sub.subviews) {
-                for (UIView *grandChild in child.subviews) {
-                    if ([grandChild isKindOfClass:[UISwitch class]]) {
-                        hasSwitches = YES;
-                        break;
-                    }
-                }
-                if ([child isKindOfClass:[UISwitch class]]) {
-                    hasSwitches = YES;
-                    break;
-                }
-            }
-            if (hasSwitches) {
-                aimContainer = sub;
+            // Target the multiline status / diagnostics label in the scroll view
+            if (lbl.numberOfLines != 1 && lbl.superview == sv) {
+                CGRect f = lbl.frame;
+                f.origin.y = 522.0;
+                lbl.frame = f;
             }
         }
     }
     
-    if (aimContainer) {
-        // Calculate bottom of last visible card inside aimContainer
-        CGFloat maxY = 0;
-        for (UIView *card in aimContainer.subviews) {
-            if (!card.hidden && card.frame.size.height > 0) {
-                CGFloat bottom = CGRectGetMaxY(card.frame);
-                if (bottom > maxY) maxY = bottom;
-            }
-        }
-        
-        if (maxY > 0) {
-            // Resize aimContainer to fit remaining cards tightly
-            CGRect aimFrame = aimContainer.frame;
-            aimFrame.size.height = maxY;
-            aimContainer.frame = aimFrame;
-            
-            CGFloat currentY = CGRectGetMaxY(aimFrame) + 16.0;
-            
-            if (resetButton) {
-                CGRect rFrame = resetButton.frame;
-                rFrame.origin.y = currentY;
-                resetButton.frame = rFrame;
-                currentY = CGRectGetMaxY(rFrame) + 14.0;
-            }
-            
-            if (resultLabel) {
-                CGRect lFrame = resultLabel.frame;
-                lFrame.origin.y = currentY;
-                resultLabel.frame = lFrame;
-            }
-            
-            if ([container isKindOfClass:[UIScrollView class]]) {
-                UIScrollView *sv = (UIScrollView *)container;
-                CGSize cs = sv.contentSize;
-                if (resultLabel) {
-                    cs.height = CGRectGetMaxY(resultLabel.frame) + 40.0;
-                }
-                sv.contentSize = cs;
-            }
-        }
+    CGSize cs = sv.contentSize;
+    if (cs.height > 600) {
+        cs.height = 670.0;
+        sv.contentSize = cs;
     }
 }
 
