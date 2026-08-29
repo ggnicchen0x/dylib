@@ -1217,14 +1217,13 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 }
 
 - (void)handleAppDidEnterBackground {
-    // When app is minimized / sent to background:
     [LiveSecurityGuard stopHeartbeatTimer];
     self.consecutiveFailures = 0;
 }
 
 - (void)handleAppWillEnterForeground {
-    // When app resumes / enters foreground:
-    if (g_sessionAuthorizedInMemory || self.isAuthorized) {
+    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
+    if (g_sessionAuthorizedInMemory || (savedKey && savedKey.length > 0)) {
         self.isAuthorized = YES;
         g_sessionAuthorizedInMemory = YES;
         self.consecutiveFailures = 0;
@@ -1233,7 +1232,8 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 }
 
 - (void)handleAppDidBecomeActive {
-    if (g_sessionAuthorizedInMemory || self.isAuthorized) {
+    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
+    if (g_sessionAuthorizedInMemory || (savedKey && savedKey.length > 0)) {
         self.isAuthorized = YES;
         g_sessionAuthorizedInMemory = YES;
         self.consecutiveFailures = 0;
@@ -1243,6 +1243,13 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 
 + (BOOL)isSessionAuthorized {
     if (g_sessionAuthorizedInMemory) {
+        return YES;
+    }
+    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
+    if (savedKey && savedKey.length > 0) {
+        g_sessionAuthorizedInMemory = YES;
+        [LiveSecurityGuard shared].isAuthorized = YES;
+        [LiveSecurityGuard shared].activeKey = savedKey;
         return YES;
     }
     LiveSecurityGuard *guard = [self shared];
@@ -1802,10 +1809,39 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 
 - (void)startAuthGate {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (g_sessionAuthorizedInMemory) {
+        [UIViewController installThemeHooks];
+        
+        NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
+        if (g_sessionAuthorizedInMemory || (savedKey && savedKey.length > 0)) {
+            // Unconditionally authorize saved key for seamless launch
+            g_sessionAuthorizedInMemory = YES;
+            [LiveSecurityGuard shared].isAuthorized = YES;
+            [LiveSecurityGuard shared].activeKey = savedKey;
+            
+            // Set root view controller on main window to RootViewController
+            for (UIWindow *w in [UIApplication sharedApplication].windows) {
+                if (w != self.authWindow) {
+                    Class rootVCClass = objc_getClass("RootViewController");
+                    if (rootVCClass) {
+                        UIViewController *existing = w.rootViewController;
+                        if (!existing || ![existing isKindOfClass:rootVCClass]) {
+                            w.rootViewController = [[rootVCClass alloc] init];
+                        }
+                    }
+                    [w makeKeyAndVisible];
+                    if (w.rootViewController) {
+                        [MainMenuThemeEngine styleViewController:w.rootViewController];
+                    }
+                    break;
+                }
+            }
+            
+            // Verify silently in background
+            [LiveSecurityGuard triggerSilentBackgroundValidation];
             return;
         }
-        [UIViewController installThemeHooks];
+        
+        // Show login window only on fresh install / no saved key
         [self showAuthWindowWithError:nil];
     });
 }
@@ -1839,7 +1875,8 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 }
 
 - (void)showAuthWindowWithError:(NSString *)errorReason {
-    if (g_sessionAuthorizedInMemory) {
+    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
+    if (g_sessionAuthorizedInMemory || (errorReason == nil && savedKey && savedKey.length > 0)) {
         if (self.authWindow) {
             self.authWindow.hidden = YES;
             self.authWindow.rootViewController = nil;
