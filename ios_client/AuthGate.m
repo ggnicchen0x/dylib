@@ -2,58 +2,16 @@
 #import <UIKit/UIKit.h>
 #import <Security/Security.h>
 #import <objc/runtime.h>
-#import <CommonCrypto/CommonHMAC.h>
-#import <CommonCrypto/CommonDigest.h>
-#import <mach-o/dyld.h>
-#import <sys/sysctl.h>
 
 // ==========================================
-// Obfuscated String Engine (Zero Plaintext Domain or Endpoints)
+// Configurable Settings
 // ==========================================
-static const unsigned char ENC_BASE_URL[] = { 0x32, 0x29, 0x14, 0x13, 0x5C, 0x46, 0x43, 0x09, 0x1B, 0x44, 0x4C, 0x55, 0x1C, 0xEE, 0xF0, 0xAA, 0xE2, 0xE2, 0xE3, 0xE7, 0xFF, 0xF7, 0xFB, 0xB1, 0xC1, 0xC9, 0xC7, 0xDE, 0xCA, 0x8B, 0x86, 0x82, 0x83, 0x85, 0xF1 };
-static const size_t ENC_BASE_URL_LEN = 35;
-
-static const unsigned char ENC_VALIDATE_EP[] = { 0x75, 0x3C, 0x10, 0x0A, 0x49, 0x1F, 0x5D, 0x40, 0x13, 0x00, 0x0C, 0x13, 0x51, 0xF7, 0xE5, 0xEB, 0xE3, 0xE9, 0xF1, 0xE7, 0xF3 };
-static const size_t ENC_VALIDATE_EP_LEN = 21;
-
-static const unsigned char ENC_HEARTBEAT_EP[] = { 0x75, 0x3C, 0x10, 0x0A, 0x49, 0x1F, 0x5D, 0x40, 0x13, 0x00, 0x0C, 0x13, 0x51, 0xE9, 0xE1, 0xE6, 0xF8, 0xF9, 0xF2, 0xF6, 0xF7, 0xED };
-static const size_t ENC_HEARTBEAT_EP_LEN = 22;
-
-static const unsigned char ENC_SUPPORT_URL[] = { 0x32, 0x29, 0x14, 0x13, 0x15, 0x53, 0x43, 0x40, 0x16, 0x1C, 0x0B, 0x18, 0x11, 0xF3, 0xE0, 0xA9, 0xED, 0xEA, 0xBF, 0xFD, 0xDB, 0xC8, 0xFD, 0xFE, 0xCF, 0xE1, 0xE6, 0xC1, 0x9C };
-static const size_t ENC_SUPPORT_URL_LEN = 29;
-
-static inline NSString *GetDecryptedString(const unsigned char *bytes, size_t len, unsigned char key) {
-    char *buf = (char *)malloc(len + 1);
-    if (!buf) return @"";
-    for (size_t i = 0; i < len; i++) {
-        buf[i] = (char)(bytes[i] ^ (unsigned char)((key + (i * 3)) & 0xFF));
-    }
-    buf[len] = '\0';
-    NSString *res = [NSString stringWithUTF8String:buf];
-    free(buf);
-    return res ?: @"";
-}
-
-static inline NSString *GET_SERVER_BASE_URL(void) {
-    return GetDecryptedString(ENC_BASE_URL, ENC_BASE_URL_LEN, 0x5A);
-}
-
-static inline NSString *GET_VALIDATE_URL(void) {
-    return [NSString stringWithFormat:@"%@%@", GET_SERVER_BASE_URL(), GetDecryptedString(ENC_VALIDATE_EP, ENC_VALIDATE_EP_LEN, 0x5A)];
-}
-
-static inline NSString *GET_HEARTBEAT_URL(void) {
-    return [NSString stringWithFormat:@"%@%@", GET_SERVER_BASE_URL(), GetDecryptedString(ENC_HEARTBEAT_EP, ENC_HEARTBEAT_EP_LEN, 0x5A)];
-}
-
-static inline NSString *GET_SUPPORT_URL(void) {
-    return GetDecryptedString(ENC_SUPPORT_URL, ENC_SUPPORT_URL_LEN, 0x5A);
-}
-
-#define APP_TITLE @"EXTERNALFF AUTHENTICATION"
-#define APP_SUBTITLE @"Live Realtime License Verification"
-#define KEYCHAIN_KEY @"com.externalff.auth.license_key"
-#define KEYCHAIN_HWID @"com.externalff.auth.device_hwid"
+#define AUTH_SERVER_URL @"http://192.168.1.163:8000/api/v1/auth/validate" // PC LAN IP (or replace with your public domain / VPS / ngrok)
+#define APP_TITLE @"PROXYVN AUTHENTICATION"
+#define APP_SUBTITLE @"Enter your license key to activate"
+#define SUPPORT_URL @"https://discord.gg/nMQaamDNj2"
+#define KEYCHAIN_KEY @"com.proxyvn.auth.license_key"
+#define KEYCHAIN_HWID @"com.proxyvn.auth.device_hwid"
 
 // Unified Cyberpunk Theme Palette
 #define THEME_BG          [UIColor colorWithRed:0.04 green:0.05 blue:0.08 alpha:1.0] // #0a0d14 Deep Obsidian
@@ -62,25 +20,6 @@ static inline NSString *GET_SUPPORT_URL(void) {
 #define THEME_ACCENT      [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:1.0] // #6366f1 Neon Indigo
 #define THEME_TEXT_WHITE  [UIColor colorWithRed:0.97 green:0.98 blue:0.99 alpha:1.0] // #f8fafc Crisp White
 #define THEME_TEXT_MUTED  [UIColor colorWithRed:0.58 green:0.64 blue:0.72 alpha:1.0] // #94a3b8 Slate Muted
-
-// Forward declarations & Core Interfaces
-@interface AuthGateManager : NSObject
-@property (nonatomic, strong) UIWindow *authWindow;
-+ (instancetype)shared;
-- (void)startAuthGate;
-- (void)reshowLockdownGateWithReason:(NSString *)reason;
-- (void)showAuthWindowWithError:(NSString *)errorReason;
-@end
-
-@interface LiveSecurityGuard : NSObject
-+ (instancetype)shared;
-+ (BOOL)isSessionAuthorized;
-+ (void)setAuthorizedSessionWithKey:(NSString *)key token:(NSString *)token expiresAt:(NSNumber *)expiresAt;
-+ (void)enforceLockdownWithReason:(NSString *)reason;
-+ (void)startHeartbeatTimer;
-+ (void)stopHeartbeatTimer;
-+ (void)triggerSilentBackgroundValidation;
-@end
 
 // ==========================================
 // Keychain & Storage Helpers
@@ -94,69 +33,25 @@ static inline NSString *GET_SUPPORT_URL(void) {
 @implementation AuthStorage
 
 + (void)saveString:(NSString *)value forKey:(NSString *)key {
-    if (!value || !key) return;
-    
-    // 1. Save to iOS Keychain (persists across reinstalls and resigning)
-    NSData *data = [value dataUsingEncoding:NSUTF8StringEncoding];
-    NSDictionary *deleteQuery = @{
-        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
-        (__bridge id)kSecAttrAccount: key,
-        (__bridge id)kSecAttrService: @"com.externalff.auth.service"
-    };
-    SecItemDelete((__bridge CFDictionaryRef)deleteQuery);
-    
-    NSDictionary *addQuery = @{
-        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
-        (__bridge id)kSecAttrAccount: key,
-        (__bridge id)kSecAttrService: @"com.externalff.auth.service",
-        (__bridge id)kSecValueData: data,
-        (__bridge id)kSecAttrAccessible: (__bridge id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-    };
-    SecItemAdd((__bridge CFDictionaryRef)addQuery, NULL);
-    
-    // 2. Also save to NSUserDefaults as secondary backup
     [[NSUserDefaults standardUserDefaults] setObject:value forKey:key];
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
 + (NSString *)getStringForKey:(NSString *)key {
-    if (!key) return nil;
-    
-    // 1. Try reading from iOS Keychain first
-    NSDictionary *query = @{
-        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
-        (__bridge id)kSecAttrAccount: key,
-        (__bridge id)kSecAttrService: @"com.externalff.auth.service",
-        (__bridge id)kSecReturnData: (__bridge id)kCFBooleanTrue,
-        (__bridge id)kSecMatchLimit: (__bridge id)kSecMatchLimitOne
-    };
-    
-    CFTypeRef result = NULL;
-    OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
-    if (status == errSecSuccess && result != NULL) {
-        NSData *data = (__bridge_transfer NSData *)result;
-        NSString *val = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-        if (val && val.length > 0) return val;
-    }
-    
-    // 2. Fallback to NSUserDefaults
     return [[NSUserDefaults standardUserDefaults] stringForKey:key];
 }
 
 + (NSString *)getDeviceHWID {
-    // 1. Check permanent iOS Keychain
     NSString *cachedHWID = [self getStringForKey:KEYCHAIN_HWID];
     if (cachedHWID && cachedHWID.length > 0) {
         return cachedHWID;
     }
     
-    // 2. Query Apple's identifierForVendor
     NSString *vendorID = [[[UIDevice currentDevice] identifierForVendor] UUIDString];
     if (!vendorID || vendorID.length == 0) {
         vendorID = [[NSUUID UUID] UUIDString];
     }
     
-    // 3. Save permanently to iOS Keychain
     [self saveString:vendorID forKey:KEYCHAIN_HWID];
     return vendorID;
 }
@@ -198,93 +93,9 @@ static inline NSString *GET_SUPPORT_URL(void) {
         tabBar.unselectedItemTintColor = THEME_TEXT_MUTED;
         tabBar.layer.borderColor = [UIColor colorWithRed:0.2 green:0.25 blue:0.35 alpha:0.3].CGColor;
         tabBar.layer.borderWidth = 0.5;
-        
-        NSArray *items = tabBar.items;
-        if (items.count > 0) [items[0] setTitle:@"Home"];
-        if (items.count > 1) [items[1] setTitle:@"Mods"];
-        
-        for (UIViewController *child in vc.tabBarController.viewControllers) {
-            NSString *cname = NSStringFromClass([child class]);
-            if ([cname containsString:@"NoExploit"]) {
-                child.title = @"Mods";
-                child.navigationItem.title = @"Mods";
-                child.tabBarItem.title = @"Mods";
-            } else if ([cname containsString:@"Exploit"]) {
-                child.title = @"Home";
-                child.navigationItem.title = @"Home";
-                child.tabBarItem.title = @"Home";
-            }
-        }
     }
     
     [self styleViewHierarchy:vc.view isRoot:YES];
-    [self realignMenuLayout:vc];
-}
-
-+ (void)realignMenuLayout:(UIViewController *)vc {
-    if (!vc || !vc.view) return;
-    
-    // Find scrollView if present
-    UIScrollView *sv = nil;
-    if ([vc.view isKindOfClass:[UIScrollView class]]) {
-        sv = (UIScrollView *)vc.view;
-    } else {
-        for (UIView *sub in vc.view.subviews) {
-            if ([sub isKindOfClass:[UIScrollView class]]) {
-                sv = (UIScrollView *)sub;
-                break;
-            }
-        }
-    }
-    
-    if (!sv) return;
-    
-    NSString *cname = NSStringFromClass([vc class]);
-    BOOL isNoExploit = [cname containsString:@"NoExploit"] || [vc.title isEqualToString:@"Mods"];
-    
-    // Precise Ghidra Geometry:
-    // Home (ProxyExploitViewController, has top START box @ y=48):
-    //   Cards end at y=450.0. Reset @ y=468.0. Status @ y=522.0. ContentSize @ 700.0.
-    // Mods (ProxyNoExploitViewController, no top START box, starts directly at y=16):
-    //   Cards end at y=342.0. Reset @ y=360.0. Status @ y=414.0. ContentSize @ 560.0.
-    
-    CGFloat resetY = isNoExploit ? 360.0 : 468.0;
-    CGFloat statusY = isNoExploit ? 414.0 : 522.0;
-    CGFloat contentH = isNoExploit ? 560.0 : 700.0;
-    
-    for (UIView *sub in sv.subviews) {
-        if ([sub isKindOfClass:[UIButton class]]) {
-            UIButton *btn = (UIButton *)sub;
-            NSString *t = [btn titleForState:UIControlStateNormal] ?: @"";
-            if ([t isEqualToString:@"Reset"]) {
-                CGRect f = btn.frame;
-                f.origin.y = resetY;
-                f.size.height = 44.0;
-                btn.frame = f;
-            }
-        } else if ([sub isKindOfClass:[UILabel class]]) {
-            UILabel *lbl = (UILabel *)sub;
-            // Target the multiline status / diagnostics label in the scroll view
-            if (lbl.numberOfLines != 1 && lbl.superview == sv) {
-                CGRect f = lbl.frame;
-                f.origin.y = statusY;
-                f.origin.x = 16.0;
-                f.size.width = sv.bounds.size.width > 32 ? (sv.bounds.size.width - 32.0) : 340.0;
-                f.size.height = 80.0;
-                lbl.frame = f;
-                lbl.numberOfLines = 0;
-                lbl.lineBreakMode = NSLineBreakByWordWrapping;
-                lbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
-                lbl.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
-            }
-        }
-    }
-    
-    CGSize cs = sv.contentSize;
-    if (cs.height > 400) {
-        cs.height = contentH;
-        sv.contentSize = cs;
-    }
 }
 
 + (void)styleViewHierarchy:(UIView *)view isRoot:(BOOL)isRoot {
@@ -304,7 +115,7 @@ static inline NSString *GET_SUPPORT_URL(void) {
             // Check if label is inside a switch row card
             BOOL isInsideSwitchCard = NO;
             UIView *p = lbl.superview;
-            if (p && ![p isKindOfClass:[UIScrollView class]]) {
+            if (p) {
                 for (UIView *sibling in p.subviews) {
                     if ([sibling isKindOfClass:[UISwitch class]]) {
                         isInsideSwitchCard = YES;
@@ -313,75 +124,28 @@ static inline NSString *GET_SUPPORT_URL(void) {
                 }
             }
             
-            NSString *trimmed = [text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-            if ([trimmed isEqualToString:@"Exploit"]) {
-                lbl.text = @"Home";
+            if ([text isEqualToString:@"Exploit"] || [text isEqualToString:@"No Exploit"] || [text isEqualToString:@"Account"]) {
                 lbl.textColor = THEME_TEXT_WHITE;
                 lbl.font = [UIFont systemFontOfSize:22 weight:UIFontWeightHeavy];
-            } else if ([trimmed isEqualToString:@"No Exploit"]) {
-                lbl.text = @"Mods";
-                lbl.textColor = THEME_TEXT_WHITE;
-                lbl.font = [UIFont systemFontOfSize:22 weight:UIFontWeightHeavy];
-            } else if ([trimmed isEqualToString:@"Home"] || [trimmed isEqualToString:@"Mods"] || [trimmed isEqualToString:@"Mod"] || [trimmed isEqualToString:@"Account"]) {
-                lbl.textColor = THEME_TEXT_WHITE;
-                lbl.font = [UIFont systemFontOfSize:22 weight:UIFontWeightHeavy];
-            } else if ([trimmed containsString:@"ModChest"] || [trimmed containsString:@"Chest"]) {
-                UIView *card = lbl.superview;
-                if (card) {
-                    card.hidden = YES;
-                    card.frame = CGRectZero;
-                    [card removeFromSuperview];
-                }
-            } else if ([trimmed isEqualToString:@"Maggic Bullet"] || [trimmed isEqualToString:@"Magic Bullet"]) {
-                lbl.text = @"200% Magic Bullet";
-                lbl.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
-                lbl.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
-            } else if (isInsideSwitchCard) {
+            } else if (isInsideSwitchCard || [text isEqualToString:@"Drag"] || [text isEqualToString:@"100% Body"] || [text isEqualToString:@"95% Body"] || [text isEqualToString:@"Maggic Bullet"] || [text isEqualToString:@"ModChest"]) {
                 // Feature label inside white card: Dark bold black
                 lbl.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
                 lbl.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
             } else {
                 // All status, diagnostics, and dynamic messages on the dark background ("Drag applied ✓", "Exploit: running", etc.): Bright Light Cyan/Slate
                 lbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
-                lbl.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
-                lbl.numberOfLines = 0;
+                lbl.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
             }
         }
         
         // 2. Switches & their parent row card
         else if ([sub isKindOfClass:[UISwitch class]]) {
             UISwitch *sw = (UISwitch *)sub;
-            UIView *parent = sw.superview;
-            
-            // Check if this switch card belongs to ModChest or has an empty label
-            BOOL isModChest = NO;
-            if (parent) {
-                for (UIView *sibling in parent.subviews) {
-                    if ([sibling isKindOfClass:[UILabel class]]) {
-                        UILabel *l = (UILabel *)sibling;
-                        NSString *t = l.text ?: @"";
-                        NSString *tr = [t stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-                        if ([tr containsString:@"ModChest"] || [tr containsString:@"Chest"] || [tr isEqualToString:@""]) {
-                            isModChest = YES;
-                            break;
-                        }
-                    }
-                }
-            }
-            
-            if (isModChest) {
-                if (parent) {
-                    parent.hidden = YES;
-                    parent.frame = CGRectZero;
-                    [parent removeFromSuperview];
-                }
-                continue;
-            }
-            
             sw.onTintColor = THEME_ACCENT;
             sw.thumbTintColor = [UIColor whiteColor];
             
             // Style the parent row card
+            UIView *parent = sw.superview;
             if (parent && parent != view) {
                 parent.backgroundColor = THEME_CARD_BG;
                 parent.layer.cornerRadius = 12;
@@ -473,43 +237,13 @@ static inline NSString *GET_SUPPORT_URL(void) {
 @implementation UILabel (DynamicRuntimeThemeHook)
 
 - (void)hook_dynamicRuntimeSetText:(NSString *)text {
-    if (!text || [NSStringFromClass([self class]) containsString:@"AuthGate"]) {
-        [self hook_dynamicRuntimeSetText:text];
-        return;
-    }
-    
-    NSString *trimmed = [text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    if ([trimmed isEqualToString:@"Exploit"]) {
-        [self hook_dynamicRuntimeSetText:@"Home"];
-        self.textColor = THEME_TEXT_WHITE;
-        return;
-    }
-    if ([trimmed isEqualToString:@"No Exploit"]) {
-        [self hook_dynamicRuntimeSetText:@"Mods"];
-        self.textColor = THEME_TEXT_WHITE;
-        return;
-    }
-    if ([trimmed isEqualToString:@"Maggic Bullet"] || [trimmed isEqualToString:@"Magic Bullet"]) {
-        [self hook_dynamicRuntimeSetText:@"200% Magic Bullet"];
-        self.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
-        return;
-    }
-    if ([trimmed containsString:@"ModChest"] || [trimmed containsString:@"Chest"]) {
-        UIView *p = self.superview;
-        if (p) {
-            p.hidden = YES;
-            p.frame = CGRectZero;
-            [p removeFromSuperview];
-        }
-        return;
-    }
-    
     [self hook_dynamicRuntimeSetText:text];
+    if (!text || [NSStringFromClass([self class]) containsString:@"AuthGate"]) return;
     
     // Check if this label is inside a switch row card
     BOOL isInsideSwitchCard = NO;
     UIView *p = self.superview;
-    if (p && ![p isKindOfClass:[UIScrollView class]]) {
+    if (p) {
         for (UIView *sibling in p.subviews) {
             if ([sibling isKindOfClass:[UISwitch class]]) {
                 isInsideSwitchCard = YES;
@@ -518,142 +252,14 @@ static inline NSString *GET_SUPPORT_URL(void) {
         }
     }
     
-    if (isInsideSwitchCard) {
+    if (isInsideSwitchCard || [text isEqualToString:@"Drag"] || [text isEqualToString:@"100% Body"] || [text isEqualToString:@"95% Body"] || [text isEqualToString:@"Maggic Bullet"] || [text isEqualToString:@"ModChest"]) {
         self.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
-        self.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
-    } else if ([trimmed isEqualToString:@"Home"] || [trimmed isEqualToString:@"Mods"] || [trimmed isEqualToString:@"Mod"] || [trimmed isEqualToString:@"Account"]) {
+    } else if ([text isEqualToString:@"Exploit"] || [text isEqualToString:@"No Exploit"] || [text isEqualToString:@"Account"]) {
         self.textColor = THEME_TEXT_WHITE;
-        self.font = [UIFont systemFontOfSize:22 weight:UIFontWeightHeavy];
     } else {
         // Any status/diagnostics/runtime toast on the dark background ("Drag applied ✓", "Exploit: running", etc.)
         self.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
-        self.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
-        self.numberOfLines = 0;
     }
-}
-
-@end
-
-// ==========================================
-// Switch Row Creation Hook (Removes ModChest & Renames Magic Bullet)
-// ==========================================
-@interface NSObject (SwitchRowHook)
-@end
-
-@implementation NSObject (SwitchRowHook)
-
-- (double)hook_addSwitchRowWithTitle:(NSString *)title option:(NSInteger)option toContainer:(UIView *)container y:(double)y {
-    NSString *t = title ? [title stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] : @"";
-    if ([t containsString:@"ModChest"] || [t containsString:@"Chest"] || option == 4) {
-        return y;
-    }
-    if ([t containsString:@"Maggic"] || [t containsString:@"Magic"]) {
-        title = @"200% Magic Bullet";
-    }
-    return [self hook_addSwitchRowWithTitle:title option:option toContainer:container y:y];
-}
-
-@end
-
-// ==========================================
-// FluckAuthCore Native Bypass & Gate Interceptor
-// ==========================================
-@interface NSObject (FluckAuthCoreBypassHooks)
-@end
-
-@implementation NSObject (FluckAuthCoreBypassHooks)
-
-- (BOOL)hook_fluck_gatePassed {
-    return [LiveSecurityGuard isSessionAuthorized];
-}
-
-- (NSString *)hook_fluck_savedKey {
-    return [AuthStorage getStringForKey:KEYCHAIN_KEY] ?: @"";
-}
-
-- (void)hook_fluck_markGatePassed {
-}
-
-- (void)hook_fluck_refreshExpiryFromServer {
-}
-
-- (void)hook_fluck_startHeartbeat {
-}
-
-- (void)hook_fluck_startKeyWatchdog {
-}
-
-- (void)hook_fluck_revokeGateWithReason:(id)reason {
-}
-
-- (void)hook_fluck_revokeAndDie:(id)arg1 label:(id)arg2 {
-}
-
-- (void)hook_fluck_failAndDie:(id)arg1 {
-}
-
-@end
-
-// ==========================================
-// UIViewController & UINavigationItem & UITabBarItem Title Hooks
-// ==========================================
-@interface UIViewController (ThemeTitleHook)
-@end
-
-@implementation UIViewController (ThemeTitleHook)
-
-- (void)hook_vc_setTitle:(NSString *)title {
-    if ([title isEqualToString:@"Exploit"]) {
-        [self hook_vc_setTitle:@"Home"];
-        self.navigationItem.title = @"Home";
-        self.tabBarItem.title = @"Home";
-        return;
-    }
-    if ([title isEqualToString:@"No Exploit"]) {
-        [self hook_vc_setTitle:@"Mods"];
-        self.navigationItem.title = @"Mods";
-        self.tabBarItem.title = @"Mods";
-        return;
-    }
-    [self hook_vc_setTitle:title];
-}
-
-@end
-
-@interface UINavigationItem (ThemeNavTitleHook)
-@end
-
-@implementation UINavigationItem (ThemeNavTitleHook)
-
-- (void)hook_nav_setTitle:(NSString *)title {
-    if ([title isEqualToString:@"Exploit"]) {
-        [self hook_nav_setTitle:@"Home"];
-        return;
-    }
-    if ([title isEqualToString:@"No Exploit"]) {
-        [self hook_nav_setTitle:@"Mods"];
-        return;
-    }
-    [self hook_nav_setTitle:title];
-}
-
-@end
-
-@interface UITabBarItem (ThemeRenameHook)
-@end
-
-@implementation UITabBarItem (ThemeRenameHook)
-
-- (void)hook_tab_setTitle:(NSString *)title {
-    if ([title isEqualToString:@"Exploit"]) {
-        [self hook_tab_setTitle:@"Home"];
-        return;
-    }
-    if ([title isEqualToString:@"No Exploit"]) {
-        [self hook_tab_setTitle:@"Mods"];
-        return;
-    }
-    [self hook_tab_setTitle:title];
 }
 
 @end
@@ -716,375 +322,24 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 
 - (void)hook_viewDidLayoutSubviews {
     [self hook_viewDidLayoutSubviews];
+    
     NSString *className = NSStringFromClass([self class]);
     if ([className containsString:@"Exploit"] || [className containsString:@"Proxy"] || [className containsString:@"Account"]) {
-        if ([className containsString:@"NoExploit"] || [self.title isEqualToString:@"No Exploit"]) {
-            self.title = @"Mods";
-            self.navigationItem.title = @"Mods";
-            self.tabBarItem.title = @"Mods";
-        } else if ([className containsString:@"Exploit"] || [self.title isEqualToString:@"Exploit"]) {
-            self.title = @"Home";
-            self.navigationItem.title = @"Home";
-            self.tabBarItem.title = @"Home";
-        }
-        // Apply theme styling only once to prevent re-layout stutter when toggling switches
-        static const char *kThemeAppliedKey = "kExternalFFThemeAppliedKey";
-        if (!objc_getAssociatedObject(self, kThemeAppliedKey)) {
-            objc_setAssociatedObject(self, kThemeAppliedKey, @(YES), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            [MainMenuThemeEngine styleViewController:self];
-        }
+        [MainMenuThemeEngine styleViewController:self];
     }
-}
-
-// ==========================================
-// Core Engine Anti-Bypass Hooks (The Dead Man's Gates)
-// ==========================================
-- (void)hook_homeStartCheatBackend {
-    if (![LiveSecurityGuard isSessionAuthorized]) {
-        [LiveSecurityGuard enforceLockdownWithReason:@"Access Denied: Live Realtime Key Required."];
-        return;
-    }
-    [self hook_homeStartCheatBackend];
-}
-
-- (void)hook_ProxyExploitStartTapped {
-    if (![LiveSecurityGuard isSessionAuthorized]) {
-        [LiveSecurityGuard enforceLockdownWithReason:@"Access Denied: Live Realtime Key Required."];
-        return;
-    }
-    [self hook_ProxyExploitStartTapped];
-}
-
-- (void)hook_startTapped {
-    if (![LiveSecurityGuard isSessionAuthorized]) {
-        [LiveSecurityGuard enforceLockdownWithReason:@"Access Denied: Live Realtime Key Required."];
-        return;
-    }
-    [self hook_startTapped];
-}
-
-- (void)hook_switchChanged:(id)sender {
-    if (![LiveSecurityGuard isSessionAuthorized]) {
-        if ([sender isKindOfClass:[UISwitch class]]) {
-            [(UISwitch *)sender setOn:NO animated:YES];
-        }
-        [LiveSecurityGuard enforceLockdownWithReason:@"Cheat Switch Blocked: Realtime Authentication Required."];
-        return;
-    }
-    [self hook_switchChanged:sender];
-}
-
-- (void)hook_homeFgAttachSwitchChanged:(id)sender {
-    if (![LiveSecurityGuard isSessionAuthorized]) {
-        if ([sender isKindOfClass:[UISwitch class]]) [(UISwitch *)sender setOn:NO animated:YES];
-        [LiveSecurityGuard enforceLockdownWithReason:@"Feature Locked: Realtime Authentication Required."];
-        return;
-    }
-    [self hook_homeFgAttachSwitchChanged:sender];
-}
-
-- (void)hook_homeHudSwitchChanged:(id)sender {
-    if (![LiveSecurityGuard isSessionAuthorized]) {
-        if ([sender isKindOfClass:[UISwitch class]]) [(UISwitch *)sender setOn:NO animated:YES];
-        [LiveSecurityGuard enforceLockdownWithReason:@"Feature Locked: Realtime Authentication Required."];
-        return;
-    }
-    [self hook_homeHudSwitchChanged:sender];
-}
-
-- (void)hook_homeKgvnSwitchChanged:(id)sender {
-    if (![LiveSecurityGuard isSessionAuthorized]) {
-        if ([sender isKindOfClass:[UISwitch class]]) [(UISwitch *)sender setOn:NO animated:YES];
-        [LiveSecurityGuard enforceLockdownWithReason:@"Feature Locked: Realtime Authentication Required."];
-        return;
-    }
-    [self hook_homeKgvnSwitchChanged:sender];
-}
-
-- (void)hook_runBackgroundCheatTick {
-    if (![LiveSecurityGuard isSessionAuthorized]) {
-        return; // Drop tick without execution
-    }
-    [self hook_runBackgroundCheatTick];
 }
 
 + (void)installThemeHooks {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         SwizzleMethod([UIViewController class], @selector(viewDidLayoutSubviews), @selector(hook_viewDidLayoutSubviews));
-        SwizzleMethod([UIViewController class], @selector(setTitle:), @selector(hook_vc_setTitle:));
-        SwizzleMethod([UINavigationItem class], @selector(setTitle:), @selector(hook_nav_setTitle:));
-        SwizzleMethod([UITabBarItem class], @selector(setTitle:), @selector(hook_tab_setTitle:));
         SwizzleMethod([UILabel class], @selector(setText:), @selector(hook_dynamicRuntimeSetText:));
-        
-        Class fluckClass = objc_getClass("FluckAuthCore");
-        if (fluckClass) {
-            SwizzleMethod(fluckClass, @selector(gatePassed), @selector(hook_fluck_gatePassed));
-            SwizzleMethod(fluckClass, @selector(savedKey), @selector(hook_fluck_savedKey));
-            SwizzleMethod(fluckClass, @selector(markGatePassed), @selector(hook_fluck_markGatePassed));
-            SwizzleMethod(fluckClass, @selector(refreshExpiryFromServer), @selector(hook_fluck_refreshExpiryFromServer));
-            SwizzleMethod(fluckClass, @selector(startHeartbeat), @selector(hook_fluck_startHeartbeat));
-            SwizzleMethod(fluckClass, @selector(startKeyWatchdog), @selector(hook_fluck_startKeyWatchdog));
-            SwizzleMethod(fluckClass, @selector(revokeGateWithReason:), @selector(hook_fluck_revokeGateWithReason:));
-            SwizzleMethod(fluckClass, @selector(revokeAndDie:label:), @selector(hook_fluck_revokeAndDie:label:));
-            SwizzleMethod(fluckClass, @selector(failAndDie:), @selector(hook_fluck_failAndDie:));
-        }
-        
-        Class expVCClass = objc_getClass("ProxyExploitViewController");
-        if (expVCClass) {
-            SwizzleMethod(expVCClass, @selector(addSwitchRowWithTitle:option:toContainer:y:), @selector(hook_addSwitchRowWithTitle:option:toContainer:y:));
-            SwizzleMethod(expVCClass, @selector(_homeStartCheatBackend), @selector(hook_homeStartCheatBackend));
-            SwizzleMethod(expVCClass, @selector(ProxyExploitStartTapped), @selector(hook_ProxyExploitStartTapped));
-            SwizzleMethod(expVCClass, @selector(startTapped), @selector(hook_startTapped));
-            SwizzleMethod(expVCClass, @selector(switchChanged:), @selector(hook_switchChanged:));
-            SwizzleMethod(expVCClass, @selector(_homeFgAttachSwitchChanged:), @selector(hook_homeFgAttachSwitchChanged:));
-            SwizzleMethod(expVCClass, @selector(_homeHudSwitchChanged:), @selector(hook_homeHudSwitchChanged:));
-            SwizzleMethod(expVCClass, @selector(_homeKgvnSwitchChanged:), @selector(hook_homeKgvnSwitchChanged:));
-            SwizzleMethod(expVCClass, @selector(runBackgroundCheatTick), @selector(hook_runBackgroundCheatTick));
-        }
-        Class noExpVCClass = objc_getClass("ProxyNoExploitViewController");
-        if (noExpVCClass) {
-            SwizzleMethod(noExpVCClass, @selector(addSwitchRowWithTitle:option:toContainer:y:), @selector(hook_addSwitchRowWithTitle:option:toContainer:y:));
-            SwizzleMethod(noExpVCClass, @selector(switchChanged:), @selector(hook_switchChanged:));
-            SwizzleMethod(noExpVCClass, @selector(startTapped), @selector(hook_startTapped));
-        }
         
         Class rootVCClass = objc_getClass("RootViewController");
         if (rootVCClass) {
             SwizzleMethod(rootVCClass, @selector(tabBarController:shouldSelectViewController:), @selector(hook_root_tabBarController:shouldSelectViewController:));
         }
     });
-}
-
-@end
-
-// ==========================================
-// Live Realtime Security Guard & Heartbeat Engine
-// ==========================================
-@interface LiveSecurityGuard ()
-@property (nonatomic, assign) BOOL isAuthorized;
-@property (nonatomic, copy) NSString *activeKey;
-@property (nonatomic, copy) NSString *activeToken;
-@property (nonatomic, assign) NSTimeInterval expiresAtTimestamp;
-@property (nonatomic, assign) NSTimeInterval lastSuccessfulHeartbeat;
-@property (nonatomic, assign) NSInteger consecutiveFailures;
-@property (nonatomic, strong) dispatch_source_t heartbeatTimer;
-@end
-
-@implementation LiveSecurityGuard
-
-+ (instancetype)shared {
-    static LiveSecurityGuard *instance = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        instance = [[LiveSecurityGuard alloc] init];
-    });
-    return instance;
-}
-
-- (instancetype)init {
-    self = [super init];
-    if (self) {
-        _isAuthorized = NO;
-        _consecutiveFailures = 0;
-        _expiresAtTimestamp = 0;
-    }
-    return self;
-}
-
-+ (BOOL)isSessionAuthorized {
-    LiveSecurityGuard *guard = [self shared];
-    if (guard.isAuthorized) {
-        if (guard.expiresAtTimestamp > 0 && [[NSDate date] timeIntervalSince1970] > guard.expiresAtTimestamp) {
-            [self enforceLockdownWithReason:@"License has expired."];
-            return NO;
-        }
-        return YES;
-    }
-    
-    // Check if a saved license exists in Keychain
-    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
-    if (savedKey && savedKey.length > 0) {
-        // Validate silently in background and allow user to continue
-        [self triggerSilentBackgroundValidation];
-        return YES;
-    }
-    
-    return NO;
-}
-
-+ (void)triggerSilentBackgroundValidation {
-    static BOOL isVerifying = NO;
-    if (isVerifying) return;
-    isVerifying = YES;
-    
-    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
-    if (!savedKey || savedKey.length == 0) {
-        isVerifying = NO;
-        return;
-    }
-    
-    NSString *hwid = [AuthStorage getDeviceHWID];
-    NSString *deviceName = [[UIDevice currentDevice] name] ?: @"iOS Device";
-    NSDictionary *payload = @{
-        @"key": savedKey,
-        @"hwid": hwid,
-        @"device_name": deviceName,
-        @"app_version": @"1.0"
-    };
-    
-    NSData *data = [NSJSONSerialization dataWithJSONObject:payload options:0 error:nil];
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:GET_VALIDATE_URL()]];
-    [req setHTTPMethod:@"POST"];
-    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    [req setHTTPBody:data];
-    [req setTimeoutInterval:8.0];
-    
-    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData * _Nullable resData, NSURLResponse * _Nullable response, NSError * _Nullable error) {
-        isVerifying = NO;
-        if (!error && resData) {
-            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:resData options:0 error:nil];
-            if ([json[@"success"] boolValue]) {
-                NSDictionary *dataDict = json[@"data"] ?: json;
-                NSString *token = json[@"token"] ?: dataDict[@"token"];
-                NSNumber *expiresAt = json[@"expires_at"] ?: dataDict[@"expires_at"];
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [LiveSecurityGuard setAuthorizedSessionWithKey:savedKey token:token expiresAt:expiresAt];
-                });
-            } else {
-                NSString *code = json[@"code"] ?: @"INVALID";
-                if ([code isEqualToString:@"KEY_EXPIRED"] || [code isEqualToString:@"KEY_REVOKED"] || [code isEqualToString:@"HWID_MISMATCH"]) {
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        [LiveSecurityGuard enforceLockdownWithReason:json[@"message"] ?: @"Access Denied"];
-                    });
-                }
-            }
-        }
-    }];
-    [task resume];
-}
-
-+ (void)setAuthorizedSessionWithKey:(NSString *)key token:(NSString *)token expiresAt:(NSNumber *)expiresAt {
-    LiveSecurityGuard *guard = [self shared];
-    guard.isAuthorized = YES;
-    guard.activeKey = key;
-    guard.activeToken = token;
-    guard.consecutiveFailures = 0;
-    guard.lastSuccessfulHeartbeat = [[NSDate date] timeIntervalSince1970];
-    if (expiresAt && [expiresAt isKindOfClass:[NSNumber class]] && [expiresAt doubleValue] > 0) {
-        guard.expiresAtTimestamp = [expiresAt doubleValue];
-    } else {
-        guard.expiresAtTimestamp = 0; // Lifetime
-    }
-    [self startHeartbeatTimer];
-}
-
-+ (void)enforceLockdownWithReason:(NSString *)reason {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        LiveSecurityGuard *guard = [self shared];
-        guard.isAuthorized = NO;
-        guard.activeToken = nil;
-        [self stopHeartbeatTimer];
-        
-        // 1. Terminate cheat engines
-        for (UIWindow *w in [UIApplication sharedApplication].windows) {
-            UIViewController *root = w.rootViewController;
-            if (root) {
-                if ([root respondsToSelector:@selector(_homeStopCheatBackend)]) {
-                    [root performSelector:@selector(_homeStopCheatBackend)];
-                }
-                for (UIViewController *child in root.childViewControllers) {
-                    if ([child respondsToSelector:@selector(_homeStopCheatBackend)]) {
-                        [child performSelector:@selector(_homeStopCheatBackend)];
-                    }
-                }
-            }
-            // 2. Force turn off all switches
-            [self disableAllSwitchesInView:w];
-        }
-        
-        // 3. Reshow Auth Gate with Lockout reason
-        [[AuthGateManager shared] reshowLockdownGateWithReason:reason];
-    });
-}
-
-+ (void)disableAllSwitchesInView:(UIView *)view {
-    if ([view isKindOfClass:[UISwitch class]]) {
-        [(UISwitch *)view setOn:NO animated:NO];
-    }
-    for (UIView *sub in view.subviews) {
-        [self disableAllSwitchesInView:sub];
-    }
-}
-
-+ (void)startHeartbeatTimer {
-    LiveSecurityGuard *guard = [self shared];
-    [self stopHeartbeatTimer];
-    
-    dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0);
-    guard.heartbeatTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
-    // Ping live server every 30 seconds
-    dispatch_source_set_timer(guard.heartbeatTimer, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC), 30 * NSEC_PER_SEC, 5 * NSEC_PER_SEC);
-    
-    dispatch_source_set_event_handler(guard.heartbeatTimer, ^{
-        [self sendHeartbeatPing];
-    });
-    dispatch_resume(guard.heartbeatTimer);
-}
-
-+ (void)stopHeartbeatTimer {
-    LiveSecurityGuard *guard = [self shared];
-    if (guard.heartbeatTimer) {
-        dispatch_source_cancel(guard.heartbeatTimer);
-        guard.heartbeatTimer = nil;
-    }
-}
-
-+ (void)sendHeartbeatPing {
-    LiveSecurityGuard *guard = [self shared];
-    if (!guard.isAuthorized || !guard.activeKey || !guard.activeToken) return;
-    
-    NSString *hwid = [AuthStorage getDeviceHWID];
-    NSDictionary *payload = @{
-        @"key": guard.activeKey,
-        @"hwid": hwid,
-        @"token": guard.activeToken
-    };
-    
-    NSError *err;
-    NSData *data = [NSJSONSerialization dataWithJSONObject:payload options:0 error:&err];
-    if (!data) return;
-    
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:GET_HEARTBEAT_URL()]];
-    [req setHTTPMethod:@"POST"];
-    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    [req setHTTPBody:data];
-    [req setTimeoutInterval:10.0];
-    
-    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData * _Nullable resData, NSURLResponse * _Nullable response, NSError * _Nullable netErr) {
-        if (netErr || !resData) {
-            guard.consecutiveFailures++;
-            // 3 missed heartbeats = 90 seconds offline / server blocked -> Dead Man's Switch trips
-            if (guard.consecutiveFailures >= 3) {
-                [self enforceLockdownWithReason:@"Server connection lost. Realtime internet connection required."];
-            }
-            return;
-        }
-        
-        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:resData options:0 error:nil];
-        BOOL valid = [json[@"valid"] boolValue];
-        if (!valid) {
-            NSString *code = json[@"code"] ?: @"REVOKED";
-            NSString *msg = [NSString stringWithFormat:@"Access Terminated: %@", code];
-            [self enforceLockdownWithReason:msg];
-            return;
-        }
-        
-        // Heartbeat passed cleanly
-        guard.consecutiveFailures = 0;
-        guard.lastSuccessfulHeartbeat = [[NSDate date] timeIntervalSince1970];
-    }];
-    [task resume];
 }
 
 @end
@@ -1102,7 +357,6 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) UIView *cardView;
 @property (nonatomic, copy) void (^onSuccessBlock)(void);
-@property (nonatomic, copy) NSString *initialErrorReason;
 @end
 
 @implementation AuthGateViewController
@@ -1116,16 +370,11 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 
     [self setupUI];
     
-    if (self.initialErrorReason && self.initialErrorReason.length > 0) {
-        self.statusLabel.textColor = [UIColor colorWithRed:0.95 green:0.3 blue:0.3 alpha:1.0];
-        self.statusLabel.text = self.initialErrorReason;
-    } else {
-        // Auto validate if key exists
-        NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
-        if (savedKey && savedKey.length > 0) {
-            self.keyTextField.text = savedKey;
-            [self performAuthWithKey:savedKey isAutoLogin:YES];
-        }
+    // Auto validate if key exists
+    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
+    if (savedKey && savedKey.length > 0) {
+        self.keyTextField.text = savedKey;
+        [self performAuthWithKey:savedKey isAutoLogin:YES];
     }
 }
 
@@ -1182,7 +431,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     self.keyTextField.backgroundColor = [UIColor colorWithRed:0.04 green:0.06 blue:0.10 alpha:1.0];
     self.keyTextField.textColor = [UIColor whiteColor];
     self.keyTextField.font = [UIFont fontWithName:@"Menlo-Bold" size:13] ?: [UIFont systemFontOfSize:13 weight:UIFontWeightBold];
-    self.keyTextField.placeholder = @"EFF-XXXX-XXXX-XXXX";
+    self.keyTextField.placeholder = @"PVN-XXXX-XXXX-XXXX";
     self.keyTextField.textAlignment = NSTextAlignmentCenter;
     self.keyTextField.layer.cornerRadius = 10;
     self.keyTextField.layer.borderColor = [UIColor colorWithWhite:0.2 alpha:1.0].CGColor;
@@ -1259,7 +508,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 }
 
 - (void)openSupport {
-    NSURL *url = [NSURL URLWithString:GET_SUPPORT_URL()];
+    NSURL *url = [NSURL URLWithString:SUPPORT_URL];
     if ([[UIApplication sharedApplication] canOpenURL:url]) {
         [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
     }
@@ -1290,7 +539,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 
 - (void)performAuthWithKey:(NSString *)key isAutoLogin:(BOOL)isAutoLogin {
     [self setLoading:YES];
-    self.statusLabel.text = @"Validating live license...";
+    self.statusLabel.text = @"Validating license...";
     self.statusLabel.textColor = [UIColor colorWithWhite:0.8 alpha:1.0];
     
     NSString *hwid = [AuthStorage getDeviceHWID];
@@ -1306,7 +555,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     NSError *jsonError;
     NSData *jsonData = [NSJSONSerialization dataWithJSONObject:payload options:0 error:&jsonError];
     
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:GET_VALIDATE_URL()]];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:AUTH_SERVER_URL]];
     [request setHTTPMethod:@"POST"];
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     [request setHTTPBody:jsonData];
@@ -1334,13 +583,8 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
             
             if (success) {
                 [AuthStorage saveString:key forKey:KEYCHAIN_KEY];
-                NSDictionary *dataDict = json[@"data"] ?: json;
-                NSString *remainStr = json[@"time_left_human"] ?: (dataDict[@"remaining_formatted"] ?: @"Active");
-                NSString *token = json[@"token"] ?: (dataDict[@"token"] ?: @"VALID");
-                NSNumber *expiresAt = json[@"expires_at"] ?: dataDict[@"expires_at"];
-                
-                // Initialize LiveSecurityGuard
-                [LiveSecurityGuard setAuthorizedSessionWithKey:key token:token expiresAt:expiresAt];
+                NSDictionary *dataDict = json[@"data"];
+                NSString *remainStr = dataDict[@"remaining_formatted"] ?: @"Valid";
                 
                 self.statusLabel.textColor = [UIColor colorWithRed:0.2 green:0.85 blue:0.45 alpha:1.0];
                 self.statusLabel.text = [NSString stringWithFormat:@"Access Granted! (%@)", remainStr];
@@ -1363,8 +607,14 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 @end
 
 // ==========================================
-// Auth Gate Manager Implementation
+// Auth Gate Manager
 // ==========================================
+@interface AuthGateManager : NSObject
+@property (nonatomic, strong) UIWindow *authWindow;
++ (instancetype)shared;
+- (void)startAuthGate;
+@end
+
 @implementation AuthGateManager
 
 + (instancetype)shared {
@@ -1378,54 +628,42 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 
 - (void)startAuthGate {
     dispatch_async(dispatch_get_main_queue(), ^{
+        // Install targeted theme swizzler
         [UIViewController installThemeHooks];
-        [self showAuthWindowWithError:nil];
-    });
-}
-
-- (void)reshowLockdownGateWithReason:(NSString *)reason {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self showAuthWindowWithError:reason];
-    });
-}
-
-- (void)showAuthWindowWithError:(NSString *)errorReason {
-    if (!self.authWindow) {
+        
         UIScreen *mainScreen = [UIScreen mainScreen];
         self.authWindow = [[UIWindow alloc] initWithFrame:mainScreen.bounds];
         self.authWindow.windowLevel = UIWindowLevelAlert + 100;
-    }
-    
-    AuthGateViewController *vc = [[AuthGateViewController alloc] init];
-    vc.initialErrorReason = errorReason;
-    __weak typeof(self) weakSelf = self;
-    vc.onSuccessBlock = ^{
-        [UIView animateWithDuration:0.4 animations:^{
-            weakSelf.authWindow.alpha = 0.0;
-        } completion:^(BOOL finished) {
-            UIWindow *appWindow = nil;
-            for (UIWindow *w in [UIApplication sharedApplication].windows) {
-                if (w != weakSelf.authWindow && !w.hidden) {
-                    appWindow = w;
-                    break;
+        
+        AuthGateViewController *vc = [[AuthGateViewController alloc] init];
+        __weak typeof(self) weakSelf = self;
+        vc.onSuccessBlock = ^{
+            [UIView animateWithDuration:0.4 animations:^{
+                weakSelf.authWindow.alpha = 0.0;
+            } completion:^(BOOL finished) {
+                UIWindow *appWindow = nil;
+                for (UIWindow *w in [UIApplication sharedApplication].windows) {
+                    if (w != weakSelf.authWindow && !w.hidden) {
+                        appWindow = w;
+                        break;
+                    }
                 }
-            }
-            if (appWindow) {
-                [appWindow makeKeyAndVisible];
-                if (appWindow.rootViewController) {
-                    [MainMenuThemeEngine styleViewController:appWindow.rootViewController];
+                if (appWindow) {
+                    [appWindow makeKeyAndVisible];
+                    if (appWindow.rootViewController) {
+                        [MainMenuThemeEngine styleViewController:appWindow.rootViewController];
+                    }
                 }
-            }
-            weakSelf.authWindow.hidden = YES;
-            weakSelf.authWindow.rootViewController = nil;
-            weakSelf.authWindow = nil;
-        }];
-    };
-    
-    self.authWindow.rootViewController = vc;
-    self.authWindow.alpha = 1.0;
-    self.authWindow.hidden = NO;
-    [self.authWindow makeKeyAndVisible];
+                
+                weakSelf.authWindow.hidden = YES;
+                weakSelf.authWindow.rootViewController = nil;
+                weakSelf.authWindow = nil;
+            }];
+        };
+        
+        self.authWindow.rootViewController = vc;
+        [self.authWindow makeKeyAndVisible];
+    });
 }
 
 @end
