@@ -1,0 +1,39 @@
+name: Build iOS AuthGate Dylib
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Compile AuthGate.dylib for iOS ARM64
+        run: |
+          mkdir -p build_output
+          xcrun -sdk iphoneos clang \
+            -arch arm64 \
+            -isysroot $(xcrun -sdk iphoneos --show-sdk-path) \
+            -miphoneos-version-min=14.0 \
+            -fobjc-arc -O3 -dynamiclib \
+            -framework Foundation \
+            -framework UIKit \
+            -framework Security \
+            -framework CoreGraphics \
+            -o build_output/AuthGate.dylib \
+            ios_client/AuthGate.m
+
+      - name: Upload Compiled Dylib
+        uses: actions/upload-artifact@v4
+        with:
+          name: AuthGate-iOS-Dylib
+          path: build_output/AuthGate.dylib
