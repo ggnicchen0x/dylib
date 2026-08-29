@@ -77,36 +77,81 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
 }
 
 // ==========================================
-// Precise Switch Card & TabBar Theming
+// UIViewController Layout & Appearance Theming
 // ==========================================
-
-// 1. Hook UISwitch didMoveToSuperview to recolor the entire switch card container
-@interface UISwitch (CardRecolorHook)
+@interface UIViewController (ThemeAppearanceHook)
 @end
 
-@implementation UISwitch (CardRecolorHook)
+@implementation UIViewController (ThemeAppearanceHook)
 
-- (void)hook_switchDidMoveToSuperview {
-    [self hook_switchDidMoveToSuperview];
-    self.onTintColor = COLOR_NEON_INDIGO;
-    self.thumbTintColor = [UIColor whiteColor];
+- (void)hook_themeViewDidLayoutSubviews {
+    [self hook_themeViewDidLayoutSubviews];
+    if ([NSStringFromClass([self class]) containsString:@"AuthGate"]) return;
     
-    // Style the immediate parent card
-    UIView *card = self.superview;
-    if (card && ![card isKindOfClass:[UIScrollView class]] && ![card isKindOfClass:[UITableView class]]) {
-        card.backgroundColor = COLOR_DARK_CARD;
-        card.layer.cornerRadius = 14;
-        card.layer.borderColor = COLOR_CARD_BORDER.CGColor;
-        card.layer.borderWidth = 1.0;
+    if (self.view) {
+        self.view.backgroundColor = COLOR_OBSIDIAN_BG;
         
-        // Recolor all inner subviews and labels inside the card
-        for (UIView *sub in card.subviews) {
-            if ([sub isKindOfClass:[UILabel class]]) {
-                ((UILabel *)sub).textColor = COLOR_WHITE_TEXT;
-                ((UILabel *)sub).font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
-            } else if (![sub isKindOfClass:[UISwitch class]]) {
-                sub.backgroundColor = COLOR_DARK_CARD;
-                sub.layer.cornerRadius = 14;
+        // Style Tab Bar if present
+        if (self.tabBarController) {
+            UITabBar *tb = self.tabBarController.tabBar;
+            tb.barTintColor = COLOR_OBSIDIAN_BG;
+            tb.backgroundColor = COLOR_OBSIDIAN_BG;
+            tb.tintColor = COLOR_NEON_INDIGO;
+            tb.unselectedItemTintColor = COLOR_SLATE_MUTED;
+            
+            UITabBarAppearance *tabApp = [[UITabBarAppearance alloc] init];
+            [tabApp configureWithOpaqueBackground];
+            tabApp.backgroundColor = COLOR_OBSIDIAN_BG;
+            tabApp.stackedLayoutAppearance.normal.iconColor = COLOR_SLATE_MUTED;
+            tabApp.stackedLayoutAppearance.normal.titleTextAttributes = @{NSForegroundColorAttributeName: COLOR_SLATE_MUTED};
+            tabApp.stackedLayoutAppearance.selected.iconColor = COLOR_NEON_INDIGO;
+            tabApp.stackedLayoutAppearance.selected.titleTextAttributes = @{NSForegroundColorAttributeName: COLOR_NEON_INDIGO, NSFontAttributeName: [UIFont systemFontOfSize:10 weight:UIFontWeightBold]};
+            
+            tb.standardAppearance = tabApp;
+            if (@available(iOS 15.0, *)) {
+                tb.scrollEdgeAppearance = tabApp;
+            }
+        }
+        
+        // Traverse root level & scroll/table subviews
+        for (UIView *v in self.view.subviews) {
+            if ([v isKindOfClass:[UIScrollView class]] || [v isKindOfClass:[UITableView class]] || [v isKindOfClass:[UICollectionView class]]) {
+                v.backgroundColor = COLOR_OBSIDIAN_BG;
+            }
+            
+            for (UIView *sub in v.subviews) {
+                if ([sub isKindOfClass:[UIScrollView class]] || [sub isKindOfClass:[UITableView class]] || [sub isKindOfClass:[UICollectionView class]]) {
+                    sub.backgroundColor = COLOR_OBSIDIAN_BG;
+                }
+                
+                // Identify toggle rows (any view containing a UISwitch)
+                BOOL hasSwitch = NO;
+                for (UIView *c in sub.subviews) {
+                    if ([c isKindOfClass:[UISwitch class]]) {
+                        hasSwitch = YES;
+                        break;
+                    }
+                }
+                
+                if (hasSwitch || [NSStringFromClass([sub class]) containsString:@"SwitchItem"] || [NSStringFromClass([sub class]) containsString:@"Card"]) {
+                    sub.backgroundColor = COLOR_DARK_CARD;
+                    sub.layer.cornerRadius = 14;
+                    sub.layer.borderColor = COLOR_CARD_BORDER.CGColor;
+                    sub.layer.borderWidth = 1.0;
+                    
+                    for (UIView *c in sub.subviews) {
+                        if ([c isKindOfClass:[UILabel class]]) {
+                            ((UILabel *)c).textColor = COLOR_WHITE_TEXT;
+                            ((UILabel *)c).font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
+                        } else if ([c isKindOfClass:[UISwitch class]]) {
+                            ((UISwitch *)c).onTintColor = COLOR_NEON_INDIGO;
+                            ((UISwitch *)c).thumbTintColor = [UIColor whiteColor];
+                        } else {
+                            c.backgroundColor = COLOR_DARK_CARD;
+                            c.layer.cornerRadius = 14;
+                        }
+                    }
+                }
             }
         }
     }
@@ -114,47 +159,9 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
 
 @end
 
-// 2. Hook UIViewController viewWillAppear for Page Background & Tab Bar Appearance
-@interface UIViewController (ThemeAppearanceHook)
-@end
-
-@implementation UIViewController (ThemeAppearanceHook)
-
-- (void)hook_themeViewWillAppear:(BOOL)animated {
-    [self hook_themeViewWillAppear:animated];
-    if ([NSStringFromClass([self class]) containsString:@"AuthGate"]) return;
-    
-    // Set page background
-    if (self.view) {
-        self.view.backgroundColor = COLOR_OBSIDIAN_BG;
-    }
-    
-    // Set Tab Bar Dark Appearance
-    if (self.tabBarController) {
-        UITabBar *tb = self.tabBarController.tabBar;
-        tb.barTintColor = COLOR_OBSIDIAN_BG;
-        tb.backgroundColor = COLOR_OBSIDIAN_BG;
-        tb.tintColor = COLOR_NEON_INDIGO;
-        tb.unselectedItemTintColor = COLOR_SLATE_MUTED;
-        
-        UITabBarAppearance *tabApp = [[UITabBarAppearance alloc] init];
-        [tabApp configureWithOpaqueBackground];
-        tabApp.backgroundColor = COLOR_OBSIDIAN_BG;
-        tabApp.stackedLayoutAppearance.normal.iconColor = COLOR_SLATE_MUTED;
-        tabApp.stackedLayoutAppearance.normal.titleTextAttributes = @{NSForegroundColorAttributeName: COLOR_SLATE_MUTED};
-        tabApp.stackedLayoutAppearance.selected.iconColor = COLOR_NEON_INDIGO;
-        tabApp.stackedLayoutAppearance.selected.titleTextAttributes = @{NSForegroundColorAttributeName: COLOR_NEON_INDIGO, NSFontAttributeName: [UIFont systemFontOfSize:10 weight:UIFontWeightBold]};
-        
-        tb.standardAppearance = tabApp;
-        if (@available(iOS 15.0, *)) {
-            tb.scrollEdgeAppearance = tabApp;
-        }
-    }
-}
-
-@end
-
-// 3. Global Appearance Setup
+// ==========================================
+// Global Appearance Setup
+// ==========================================
 @interface GlobalThemeSetup : NSObject
 + (void)installTheme;
 @end
@@ -164,8 +171,7 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
 + (void)installTheme {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        SwizzleInstanceMethod([UISwitch class], @selector(didMoveToSuperview), @selector(hook_switchDidMoveToSuperview));
-        SwizzleInstanceMethod([UIViewController class], @selector(viewWillAppear:), @selector(hook_themeViewWillAppear:));
+        SwizzleInstanceMethod([UIViewController class], @selector(viewDidLayoutSubviews), @selector(hook_themeViewDidLayoutSubviews));
         
         dispatch_async(dispatch_get_main_queue(), ^{
             [UISwitch appearance].onTintColor = COLOR_NEON_INDIGO;
