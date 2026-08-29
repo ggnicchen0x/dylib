@@ -664,7 +664,8 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 @implementation UIViewController (ExploitThemeHook)
 
 - (void)hook_viewDidLayoutSubviews {
-    [self hook_viewDidLayoutSubviews];    NSString *className = NSStringFromClass([self class]);
+    [self hook_viewDidLayoutSubviews];
+    NSString *className = NSStringFromClass([self class]);
     if ([className containsString:@"Exploit"] || [className containsString:@"Proxy"] || [className containsString:@"Account"]) {
         if ([className containsString:@"NoExploit"] || [self.title isEqualToString:@"No Exploit"]) {
             self.title = @"Mods";
@@ -675,7 +676,12 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
             self.navigationItem.title = @"Home";
             self.tabBarItem.title = @"Home";
         }
-        [MainMenuThemeEngine styleViewController:self];
+        // Apply theme styling only once to prevent re-layout stutter when toggling switches
+        static const char *kThemeAppliedKey = "kExternalFFThemeAppliedKey";
+        if (!objc_getAssociatedObject(self, kThemeAppliedKey)) {
+            objc_setAssociatedObject(self, kThemeAppliedKey, @(YES), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            [MainMenuThemeEngine styleViewController:self];
+        }
     }
 }
 
