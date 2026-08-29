@@ -123,7 +123,7 @@
             } else {
                 // Feature label (e.g. "Drag", "100% Body", "Maggic Bullet", "ModChest")
                 lbl.textColor = THEME_TEXT_WHITE;
-                lbl.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemiBold];
+                lbl.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
             }
         }
         
