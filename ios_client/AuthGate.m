@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <Security/Security.h>
+#import <objc/runtime.h>
 
 // ==========================================
 // Configurable Settings
@@ -50,6 +51,56 @@
 @end
 
 // ==========================================
+// Global Dark Mode Enforcer (100% Safe, Zero Black Screens)
+// ==========================================
+static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
+    if (!cls) return;
+    Method origMethod = class_getInstanceMethod(cls, origSel);
+    Method newMethod = class_getInstanceMethod(cls, newSel);
+    if (!origMethod || !newMethod) return;
+    
+    BOOL didAdd = class_addMethod(cls, origSel, method_getImplementation(newMethod), method_getTypeEncoding(newMethod));
+    if (didAdd) {
+        class_replaceMethod(cls, newSel, method_getImplementation(origMethod), method_getTypeEncoding(origMethod));
+    } else {
+        method_exchangeImplementations(origMethod, newMethod);
+    }
+}
+
+@interface UIViewController (DarkModeEnforcer)
+@end
+
+@implementation UIViewController (DarkModeEnforcer)
+
+- (void)dark_viewWillAppear:(BOOL)animated {
+    [self dark_viewWillAppear:animated];
+    self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    if (self.view) {
+        self.view.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    }
+    if (self.tabBarController) {
+        self.tabBarController.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    }
+    if (self.navigationController) {
+        self.navigationController.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    }
+}
+
+@end
+
+@interface UIWindow (DarkModeWindowEnforcer)
+@end
+
+@implementation UIWindow (DarkModeWindowEnforcer)
+
+- (void)dark_becomeKeyWindow {
+    [self dark_becomeKeyWindow];
+    self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+}
+
+@end
+
+// ==========================================
 // Auth Gate View Controller
 // ==========================================
 @interface AuthGateViewController : UIViewController <UITextFieldDelegate>
@@ -68,6 +119,7 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     self.view.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.85];
     
     UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dismissKeyboard)];
@@ -335,9 +387,17 @@
 
 - (void)startAuthGate {
     dispatch_async(dispatch_get_main_queue(), ^{
+        // Install global UIViewController & UIWindow dark mode enforcers
+        static dispatch_once_t darkToken;
+        dispatch_once(&darkToken, ^{
+            SwizzleMethod([UIViewController class], @selector(viewWillAppear:), @selector(dark_viewWillAppear:));
+            SwizzleMethod([UIWindow class], @selector(becomeKeyWindow), @selector(dark_becomeKeyWindow));
+        });
+        
         UIScreen *mainScreen = [UIScreen mainScreen];
         self.authWindow = [[UIWindow alloc] initWithFrame:mainScreen.bounds];
         self.authWindow.windowLevel = UIWindowLevelAlert + 100;
+        self.authWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
         
         AuthGateViewController *vc = [[AuthGateViewController alloc] init];
         __weak typeof(self) weakSelf = self;
@@ -345,7 +405,6 @@
             [UIView animateWithDuration:0.4 animations:^{
                 weakSelf.authWindow.alpha = 0.0;
             } completion:^(BOOL finished) {
-                // Find main app window and restore key focus
                 UIWindow *appWindow = nil;
                 for (UIWindow *w in [UIApplication sharedApplication].windows) {
                     if (w != weakSelf.authWindow && !w.hidden) {
@@ -355,6 +414,9 @@
                 }
                 if (appWindow) {
                     appWindow.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+                    if (appWindow.rootViewController) {
+                        appWindow.rootViewController.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+                    }
                     [appWindow makeKeyAndVisible];
                 }
                 
