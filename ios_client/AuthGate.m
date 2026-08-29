@@ -6,12 +6,16 @@
 // ==========================================
 // Configurable Settings
 // ==========================================
-#define AUTH_SERVER_URL @"http://192.168.1.163:8000/api/v1/auth/validate" // PC LAN IP (or replace with your public domain / VPS / ngrok)
-#define APP_TITLE @"PROXYVN AUTHENTICATION"
-#define APP_SUBTITLE @"Enter your license key to activate"
+// Set this to your live Bot-Hosting VPS domain / IP + Port
+#define AUTH_SERVER_BASE_URL @"http://fi14.bot-hosting.cloud:25981"
+#define AUTH_VALIDATE_URL    AUTH_SERVER_BASE_URL @"/api/v1/auth/validate"
+#define AUTH_HEARTBEAT_URL   AUTH_SERVER_BASE_URL @"/api/v1/auth/heartbeat"
+
+#define APP_TITLE @"EXTERNALFF AUTHENTICATION"
+#define APP_SUBTITLE @"Live Realtime License Verification"
 #define SUPPORT_URL @"https://discord.gg/nMQaamDNj2"
-#define KEYCHAIN_KEY @"com.proxyvn.auth.license_key"
-#define KEYCHAIN_HWID @"com.proxyvn.auth.device_hwid"
+#define KEYCHAIN_KEY @"com.externalff.auth.license_key"
+#define KEYCHAIN_HWID @"com.externalff.auth.device_hwid"
 
 // Unified Cyberpunk Theme Palette
 #define THEME_BG          [UIColor colorWithRed:0.04 green:0.05 blue:0.08 alpha:1.0] // #0a0d14 Deep Obsidian
@@ -20,6 +24,17 @@
 #define THEME_ACCENT      [UIColor colorWithRed:0.39 green:0.40 blue:0.95 alpha:1.0] // #6366f1 Neon Indigo
 #define THEME_TEXT_WHITE  [UIColor colorWithRed:0.97 green:0.98 blue:0.99 alpha:1.0] // #f8fafc Crisp White
 #define THEME_TEXT_MUTED  [UIColor colorWithRed:0.58 green:0.64 blue:0.72 alpha:1.0] // #94a3b8 Slate Muted
+
+// Forward declarations
+@class AuthGateManager;
+@interface LiveSecurityGuard : NSObject
++ (instancetype)shared;
++ (BOOL)isSessionAuthorized;
++ (void)setAuthorizedSessionWithKey:(NSString *)key token:(NSString *)token expiresAt:(NSNumber *)expiresAt;
++ (void)enforceLockdownWithReason:(NSString *)reason;
++ (void)startHeartbeatTimer;
++ (void)stopHeartbeatTimer;
+@end
 
 // ==========================================
 // Keychain & Storage Helpers
@@ -559,9 +574,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 @implementation UIViewController (ExploitThemeHook)
 
 - (void)hook_viewDidLayoutSubviews {
-    [self hook_viewDidLayoutSubviews];
-    
-    NSString *className = NSStringFromClass([self class]);
+    [self hook_viewDidLayoutSubviews];    NSString *className = NSStringFromClass([self class]);
     if ([className containsString:@"Exploit"] || [className containsString:@"Proxy"] || [className containsString:@"Account"]) {
         if ([className containsString:@"NoExploit"] || [self.title isEqualToString:@"No Exploit"]) {
             self.title = @"Mods";
@@ -576,6 +589,78 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     }
 }
 
+// ==========================================
+// Core Engine Anti-Bypass Hooks (The Dead Man's Gates)
+// ==========================================
+- (void)hook_homeStartCheatBackend {
+    if (![LiveSecurityGuard isSessionAuthorized]) {
+        [LiveSecurityGuard enforceLockdownWithReason:@"Access Denied: Live Realtime Key Required."];
+        return;
+    }
+    [self hook_homeStartCheatBackend];
+}
+
+- (void)hook_ProxyExploitStartTapped:(id)sender {
+    if (![LiveSecurityGuard isSessionAuthorized]) {
+        [LiveSecurityGuard enforceLockdownWithReason:@"Access Denied: Live Realtime Key Required."];
+        return;
+    }
+    [self hook_ProxyExploitStartTapped:sender];
+}
+
+- (void)hook_startTapped:(id)sender {
+    if (![LiveSecurityGuard isSessionAuthorized]) {
+        [LiveSecurityGuard enforceLockdownWithReason:@"Access Denied: Live Realtime Key Required."];
+        return;
+    }
+    [self hook_startTapped:sender];
+}
+
+- (void)hook_switchChanged:(id)sender {
+    if (![LiveSecurityGuard isSessionAuthorized]) {
+        if ([sender isKindOfClass:[UISwitch class]]) {
+            [(UISwitch *)sender setOn:NO animated:YES];
+        }
+        [LiveSecurityGuard enforceLockdownWithReason:@"Cheat Switch Blocked: Realtime Authentication Required."];
+        return;
+    }
+    [self hook_switchChanged:sender];
+}
+
+- (void)hook_homeFgAttachSwitchChanged:(id)sender {
+    if (![LiveSecurityGuard isSessionAuthorized]) {
+        if ([sender isKindOfClass:[UISwitch class]]) [(UISwitch *)sender setOn:NO animated:YES];
+        [LiveSecurityGuard enforceLockdownWithReason:@"Feature Locked: Realtime Authentication Required."];
+        return;
+    }
+    [self hook_homeFgAttachSwitchChanged:sender];
+}
+
+- (void)hook_homeHudSwitchChanged:(id)sender {
+    if (![LiveSecurityGuard isSessionAuthorized]) {
+        if ([sender isKindOfClass:[UISwitch class]]) [(UISwitch *)sender setOn:NO animated:YES];
+        [LiveSecurityGuard enforceLockdownWithReason:@"Feature Locked: Realtime Authentication Required."];
+        return;
+    }
+    [self hook_homeHudSwitchChanged:sender];
+}
+
+- (void)hook_homeKgvnSwitchChanged:(id)sender {
+    if (![LiveSecurityGuard isSessionAuthorized]) {
+        if ([sender isKindOfClass:[UISwitch class]]) [(UISwitch *)sender setOn:NO animated:YES];
+        [LiveSecurityGuard enforceLockdownWithReason:@"Feature Locked: Realtime Authentication Required."];
+        return;
+    }
+    [self hook_homeKgvnSwitchChanged:sender];
+}
+
+- (void)hook_runBackgroundCheatTick {
+    if (![LiveSecurityGuard isSessionAuthorized]) {
+        return; // Drop tick without execution
+    }
+    [self hook_runBackgroundCheatTick];
+}
+
 + (void)installThemeHooks {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
@@ -588,10 +673,20 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
         Class expVCClass = objc_getClass("ProxyExploitViewController");
         if (expVCClass) {
             SwizzleMethod(expVCClass, @selector(addSwitchRowWithTitle:option:toContainer:y:), @selector(hook_addSwitchRowWithTitle:option:toContainer:y:));
+            SwizzleMethod(expVCClass, @selector(_homeStartCheatBackend), @selector(hook_homeStartCheatBackend));
+            SwizzleMethod(expVCClass, @selector(ProxyExploitStartTapped), @selector(hook_ProxyExploitStartTapped:));
+            SwizzleMethod(expVCClass, @selector(startTapped), @selector(hook_startTapped:));
+            SwizzleMethod(expVCClass, @selector(switchChanged:), @selector(hook_switchChanged:));
+            SwizzleMethod(expVCClass, @selector(_homeFgAttachSwitchChanged:), @selector(hook_homeFgAttachSwitchChanged:));
+            SwizzleMethod(expVCClass, @selector(_homeHudSwitchChanged:), @selector(hook_homeHudSwitchChanged:));
+            SwizzleMethod(expVCClass, @selector(_homeKgvnSwitchChanged:), @selector(hook_homeKgvnSwitchChanged:));
+            SwizzleMethod(expVCClass, @selector(runBackgroundCheatTick), @selector(hook_runBackgroundCheatTick));
         }
         Class noExpVCClass = objc_getClass("ProxyNoExploitViewController");
         if (noExpVCClass) {
             SwizzleMethod(noExpVCClass, @selector(addSwitchRowWithTitle:option:toContainer:y:), @selector(hook_addSwitchRowWithTitle:option:toContainer:y:));
+            SwizzleMethod(noExpVCClass, @selector(switchChanged:), @selector(hook_switchChanged:));
+            SwizzleMethod(noExpVCClass, @selector(startTapped), @selector(hook_startTapped:));
         }
         
         Class rootVCClass = objc_getClass("RootViewController");
@@ -599,6 +694,177 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
             SwizzleMethod(rootVCClass, @selector(tabBarController:shouldSelectViewController:), @selector(hook_root_tabBarController:shouldSelectViewController:));
         }
     });
+}
+
+@end
+
+// ==========================================
+// Live Realtime Security Guard & Heartbeat Engine
+// ==========================================
+@interface LiveSecurityGuard ()
+@property (nonatomic, assign) BOOL isAuthorized;
+@property (nonatomic, copy) NSString *activeKey;
+@property (nonatomic, copy) NSString *activeToken;
+@property (nonatomic, assign) NSTimeInterval expiresAtTimestamp;
+@property (nonatomic, assign) NSTimeInterval lastSuccessfulHeartbeat;
+@property (nonatomic, assign) NSInteger consecutiveFailures;
+@property (nonatomic, strong) dispatch_source_t heartbeatTimer;
+@end
+
+@implementation LiveSecurityGuard
+
++ (instancetype)shared {
+    static LiveSecurityGuard *instance = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        instance = [[LiveSecurityGuard alloc] init];
+    });
+    return instance;
+}
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        _isAuthorized = NO;
+        _consecutiveFailures = 0;
+        _expiresAtTimestamp = 0;
+    }
+    return self;
+}
+
++ (BOOL)isSessionAuthorized {
+    LiveSecurityGuard *guard = [self shared];
+    if (!guard.isAuthorized || guard.activeToken.length == 0) {
+        return NO;
+    }
+    if (guard.expiresAtTimestamp > 0 && [[NSDate date] timeIntervalSince1970] > guard.expiresAtTimestamp) {
+        [self enforceLockdownWithReason:@"License has expired."];
+        return NO;
+    }
+    return YES;
+}
+
++ (void)setAuthorizedSessionWithKey:(NSString *)key token:(NSString *)token expiresAt:(NSNumber *)expiresAt {
+    LiveSecurityGuard *guard = [self shared];
+    guard.isAuthorized = YES;
+    guard.activeKey = key;
+    guard.activeToken = token;
+    guard.consecutiveFailures = 0;
+    guard.lastSuccessfulHeartbeat = [[NSDate date] timeIntervalSince1970];
+    if (expiresAt && [expiresAt isKindOfClass:[NSNumber class]] && [expiresAt doubleValue] > 0) {
+        guard.expiresAtTimestamp = [expiresAt doubleValue];
+    } else {
+        guard.expiresAtTimestamp = 0; // Lifetime
+    }
+    [self startHeartbeatTimer];
+}
+
++ (void)enforceLockdownWithReason:(NSString *)reason {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        LiveSecurityGuard *guard = [self shared];
+        guard.isAuthorized = NO;
+        guard.activeToken = nil;
+        [self stopHeartbeatTimer];
+        
+        // 1. Terminate cheat engines
+        for (UIWindow *w in [UIApplication sharedApplication].windows) {
+            UIViewController *root = w.rootViewController;
+            if (root) {
+                if ([root respondsToSelector:@selector(_homeStopCheatBackend)]) {
+                    [root performSelector:@selector(_homeStopCheatBackend)];
+                }
+                for (UIViewController *child in root.children) {
+                    if ([child respondsToSelector:@selector(_homeStopCheatBackend)]) {
+                        [child performSelector:@selector(_homeStopCheatBackend)];
+                    }
+                }
+            }
+            // 2. Force turn off all switches
+            [self disableAllSwitchesInView:w];
+        }
+        
+        // 3. Reshow Auth Gate with Lockout reason
+        [[AuthGateManager shared] reshowLockdownGateWithReason:reason];
+    });
+}
+
++ (void)disableAllSwitchesInView:(UIView *)view {
+    if ([view isKindOfClass:[UISwitch class]]) {
+        [(UISwitch *)view setOn:NO animated:NO];
+    }
+    for (UIView *sub in view.subviews) {
+        [self disableAllSwitchesInView:sub];
+    }
+}
+
++ (void)startHeartbeatTimer {
+    LiveSecurityGuard *guard = [self shared];
+    [self stopHeartbeatTimer];
+    
+    dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0);
+    guard.heartbeatTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
+    // Ping live server every 30 seconds
+    dispatch_source_set_timer(guard.heartbeatTimer, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC), 30 * NSEC_PER_SEC, 5 * NSEC_PER_SEC);
+    
+    dispatch_source_set_event_handler(guard.heartbeatTimer, ^{
+        [self sendHeartbeatPing];
+    });
+    dispatch_resume(guard.heartbeatTimer);
+}
+
++ (void)stopHeartbeatTimer {
+    LiveSecurityGuard *guard = [self shared];
+    if (guard.heartbeatTimer) {
+        dispatch_source_cancel(guard.heartbeatTimer);
+        guard.heartbeatTimer = nil;
+    }
+}
+
++ (void)sendHeartbeatPing {
+    LiveSecurityGuard *guard = [self shared];
+    if (!guard.isAuthorized || !guard.activeKey || !guard.activeToken) return;
+    
+    NSString *hwid = [AuthStorage getDeviceHWID];
+    NSDictionary *payload = @{
+        @"key": guard.activeKey,
+        @"hwid": hwid,
+        @"token": guard.activeToken
+    };
+    
+    NSError *err;
+    NSData *data = [NSJSONSerialization dataWithJSONObject:payload options:0 error:&err];
+    if (!data) return;
+    
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:AUTH_HEARTBEAT_URL]];
+    [req setHTTPMethod:@"POST"];
+    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [req setHTTPBody:data];
+    [req setTimeoutInterval:10.0];
+    
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData * _Nullable resData, NSURLResponse * _Nullable response, NSError * _Nullable netErr) {
+        if (netErr || !resData) {
+            guard.consecutiveFailures++;
+            // 3 missed heartbeats = 90 seconds offline / server blocked -> Dead Man's Switch trips
+            if (guard.consecutiveFailures >= 3) {
+                [self enforceLockdownWithReason:@"Server connection lost. Realtime internet connection required."];
+            }
+            return;
+        }
+        
+        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:resData options:0 error:nil];
+        BOOL valid = [json[@"valid"] boolValue];
+        if (!valid) {
+            NSString *code = json[@"code"] ?: @"REVOKED";
+            NSString *msg = [NSString stringWithFormat:@"Access Terminated: %@", code];
+            [self enforceLockdownWithReason:msg];
+            return;
+        }
+        
+        // Heartbeat passed cleanly
+        guard.consecutiveFailures = 0;
+        guard.lastSuccessfulHeartbeat = [[NSDate date] timeIntervalSince1970];
+    }];
+    [task resume];
 }
 
 @end
@@ -616,6 +882,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) UIView *cardView;
 @property (nonatomic, copy) void (^onSuccessBlock)(void);
+@property (nonatomic, copy) NSString *initialErrorReason;
 @end
 
 @implementation AuthGateViewController
@@ -629,11 +896,16 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 
     [self setupUI];
     
-    // Auto validate if key exists
-    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
-    if (savedKey && savedKey.length > 0) {
-        self.keyTextField.text = savedKey;
-        [self performAuthWithKey:savedKey isAutoLogin:YES];
+    if (self.initialErrorReason && self.initialErrorReason.length > 0) {
+        self.statusLabel.textColor = [UIColor colorWithRed:0.95 green:0.3 blue:0.3 alpha:1.0];
+        self.statusLabel.text = self.initialErrorReason;
+    } else {
+        // Auto validate if key exists
+        NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
+        if (savedKey && savedKey.length > 0) {
+            self.keyTextField.text = savedKey;
+            [self performAuthWithKey:savedKey isAutoLogin:YES];
+        }
     }
 }
 
@@ -690,7 +962,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     self.keyTextField.backgroundColor = [UIColor colorWithRed:0.04 green:0.06 blue:0.10 alpha:1.0];
     self.keyTextField.textColor = [UIColor whiteColor];
     self.keyTextField.font = [UIFont fontWithName:@"Menlo-Bold" size:13] ?: [UIFont systemFontOfSize:13 weight:UIFontWeightBold];
-    self.keyTextField.placeholder = @"PVN-XXXX-XXXX-XXXX";
+    self.keyTextField.placeholder = @"EFF-XXXX-XXXX-XXXX";
     self.keyTextField.textAlignment = NSTextAlignmentCenter;
     self.keyTextField.layer.cornerRadius = 10;
     self.keyTextField.layer.borderColor = [UIColor colorWithWhite:0.2 alpha:1.0].CGColor;
@@ -798,7 +1070,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 
 - (void)performAuthWithKey:(NSString *)key isAutoLogin:(BOOL)isAutoLogin {
     [self setLoading:YES];
-    self.statusLabel.text = @"Validating license...";
+    self.statusLabel.text = @"Validating live license...";
     self.statusLabel.textColor = [UIColor colorWithWhite:0.8 alpha:1.0];
     
     NSString *hwid = [AuthStorage getDeviceHWID];
@@ -814,7 +1086,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     NSError *jsonError;
     NSData *jsonData = [NSJSONSerialization dataWithJSONObject:payload options:0 error:&jsonError];
     
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:AUTH_SERVER_URL]];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:AUTH_VALIDATE_URL]];
     [request setHTTPMethod:@"POST"];
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     [request setHTTPBody:jsonData];
@@ -844,6 +1116,11 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
                 [AuthStorage saveString:key forKey:KEYCHAIN_KEY];
                 NSDictionary *dataDict = json[@"data"];
                 NSString *remainStr = dataDict[@"remaining_formatted"] ?: @"Valid";
+                NSString *token = dataDict[@"token"];
+                NSNumber *expiresAt = dataDict[@"expires_at"];
+                
+                // Initialize LiveSecurityGuard
+                [LiveSecurityGuard setAuthorizedSessionWithKey:key token:token expiresAt:expiresAt];
                 
                 self.statusLabel.textColor = [UIColor colorWithRed:0.2 green:0.85 blue:0.45 alpha:1.0];
                 self.statusLabel.text = [NSString stringWithFormat:@"Access Granted! (%@)", remainStr];
@@ -868,10 +1145,8 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 // ==========================================
 // Auth Gate Manager
 // ==========================================
-@interface AuthGateManager : NSObject
+@interface AuthGateManager ()
 @property (nonatomic, strong) UIWindow *authWindow;
-+ (instancetype)shared;
-- (void)startAuthGate;
 @end
 
 @implementation AuthGateManager
@@ -887,42 +1162,54 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 
 - (void)startAuthGate {
     dispatch_async(dispatch_get_main_queue(), ^{
-        // Install targeted theme swizzler
         [UIViewController installThemeHooks];
-        
+        [self showAuthWindowWithError:nil];
+    });
+}
+
+- (void)reshowLockdownGateWithReason:(NSString *)reason {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self showAuthWindowWithError:reason];
+    });
+}
+
+- (void)showAuthWindowWithError:(NSString *)errorReason {
+    if (!self.authWindow) {
         UIScreen *mainScreen = [UIScreen mainScreen];
         self.authWindow = [[UIWindow alloc] initWithFrame:mainScreen.bounds];
         self.authWindow.windowLevel = UIWindowLevelAlert + 100;
-        
-        AuthGateViewController *vc = [[AuthGateViewController alloc] init];
-        __weak typeof(self) weakSelf = self;
-        vc.onSuccessBlock = ^{
-            [UIView animateWithDuration:0.4 animations:^{
-                weakSelf.authWindow.alpha = 0.0;
-            } completion:^(BOOL finished) {
-                UIWindow *appWindow = nil;
-                for (UIWindow *w in [UIApplication sharedApplication].windows) {
-                    if (w != weakSelf.authWindow && !w.hidden) {
-                        appWindow = w;
-                        break;
-                    }
+    }
+    
+    AuthGateViewController *vc = [[AuthGateViewController alloc] init];
+    vc.initialErrorReason = errorReason;
+    __weak typeof(self) weakSelf = self;
+    vc.onSuccessBlock = ^{
+        [UIView animateWithDuration:0.4 animations:^{
+            weakSelf.authWindow.alpha = 0.0;
+        } completion:^(BOOL finished) {
+            UIWindow *appWindow = nil;
+            for (UIWindow *w in [UIApplication sharedApplication].windows) {
+                if (w != weakSelf.authWindow && !w.hidden) {
+                    appWindow = w;
+                    break;
                 }
-                if (appWindow) {
-                    [appWindow makeKeyAndVisible];
-                    if (appWindow.rootViewController) {
-                        [MainMenuThemeEngine styleViewController:appWindow.rootViewController];
-                    }
+            }
+            if (appWindow) {
+                [appWindow makeKeyAndVisible];
+                if (appWindow.rootViewController) {
+                    [MainMenuThemeEngine styleViewController:appWindow.rootViewController];
                 }
-                
-                weakSelf.authWindow.hidden = YES;
-                weakSelf.authWindow.rootViewController = nil;
-                weakSelf.authWindow = nil;
-            }];
-        };
-        
-        self.authWindow.rootViewController = vc;
-        [self.authWindow makeKeyAndVisible];
-    });
+            }
+            weakSelf.authWindow.hidden = YES;
+            weakSelf.authWindow.rootViewController = nil;
+            weakSelf.authWindow = nil;
+        }];
+    };
+    
+    self.authWindow.rootViewController = vc;
+    self.authWindow.alpha = 1.0;
+    self.authWindow.hidden = NO;
+    [self.authWindow makeKeyAndVisible];
 }
 
 @end
