@@ -2,6 +2,10 @@
 #import <UIKit/UIKit.h>
 #import <Security/Security.h>
 #import <objc/runtime.h>
+#import <CommonCrypto/CommonHMAC.h>
+#import <CommonCrypto/CommonDigest.h>
+#import <mach-o/dyld.h>
+#import <sys/sysctl.h>
 
 // ==========================================
 // Configurable Settings
@@ -41,6 +45,7 @@
 + (void)enforceLockdownWithReason:(NSString *)reason;
 + (void)startHeartbeatTimer;
 + (void)stopHeartbeatTimer;
++ (void)triggerSilentBackgroundValidation;
 @end
 
 // ==========================================
@@ -785,14 +790,74 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 
 + (BOOL)isSessionAuthorized {
     LiveSecurityGuard *guard = [self shared];
-    if (!guard.isAuthorized || guard.activeToken.length == 0) {
-        return NO;
+    if (guard.isAuthorized) {
+        if (guard.expiresAtTimestamp > 0 && [[NSDate date] timeIntervalSince1970] > guard.expiresAtTimestamp) {
+            [self enforceLockdownWithReason:@"License has expired."];
+            return NO;
+        }
+        return YES;
     }
-    if (guard.expiresAtTimestamp > 0 && [[NSDate date] timeIntervalSince1970] > guard.expiresAtTimestamp) {
-        [self enforceLockdownWithReason:@"License has expired."];
-        return NO;
+    
+    // Check if a saved license exists in Keychain
+    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
+    if (savedKey && savedKey.length > 0) {
+        // Validate silently in background and allow user to continue
+        [self triggerSilentBackgroundValidation];
+        return YES;
     }
-    return YES;
+    
+    return NO;
+}
+
++ (void)triggerSilentBackgroundValidation {
+    static BOOL isVerifying = NO;
+    if (isVerifying) return;
+    isVerifying = YES;
+    
+    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
+    if (!savedKey || savedKey.length == 0) {
+        isVerifying = NO;
+        return;
+    }
+    
+    NSString *hwid = [AuthStorage getDeviceHWID];
+    NSString *deviceName = [[UIDevice currentDevice] name] ?: @"iOS Device";
+    NSDictionary *payload = @{
+        @"key": savedKey,
+        @"hwid": hwid,
+        @"device_name": deviceName,
+        @"app_version": @"1.0"
+    };
+    
+    NSData *data = [NSJSONSerialization dataWithJSONObject:payload options:0 error:nil];
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:GET_VALIDATE_URL()]];
+    [req setHTTPMethod:@"POST"];
+    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [req setHTTPBody:data];
+    [req setTimeoutInterval:8.0];
+    
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData * _Nullable resData, NSURLResponse * _Nullable response, NSError * _Nullable error) {
+        isVerifying = NO;
+        if (!error && resData) {
+            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:resData options:0 error:nil];
+            if ([json[@"success"] boolValue]) {
+                NSDictionary *dataDict = json[@"data"] ?: json;
+                NSString *token = json[@"token"] ?: dataDict[@"token"];
+                NSNumber *expiresAt = json[@"expires_at"] ?: dataDict[@"expires_at"];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [LiveSecurityGuard setAuthorizedSessionWithKey:savedKey token:token expiresAt:expiresAt];
+                });
+            } else {
+                NSString *code = json[@"code"] ?: @"INVALID";
+                if ([code isEqualToString:@"KEY_EXPIRED"] || [code isEqualToString:@"KEY_REVOKED"] || [code isEqualToString:@"HWID_MISMATCH"]) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [LiveSecurityGuard enforceLockdownWithReason:json[@"message"] ?: @"Access Denied"];
+                    });
+                }
+            }
+        }
+    }];
+    [task resume];
 }
 
 + (void)setAuthorizedSessionWithKey:(NSString *)key token:(NSString *)token expiresAt:(NSNumber *)expiresAt {
@@ -886,7 +951,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     NSData *data = [NSJSONSerialization dataWithJSONObject:payload options:0 error:&err];
     if (!data) return;
     
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:AUTH_HEARTBEAT_URL]];
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:GET_HEARTBEAT_URL()]];
     [req setHTTPMethod:@"POST"];
     [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     [req setHTTPBody:data];
@@ -1090,7 +1155,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 }
 
 - (void)openSupport {
-    NSURL *url = [NSURL URLWithString:SUPPORT_URL];
+    NSURL *url = [NSURL URLWithString:GET_SUPPORT_URL()];
     if ([[UIApplication sharedApplication] canOpenURL:url]) {
         [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
     }
@@ -1137,7 +1202,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     NSError *jsonError;
     NSData *jsonData = [NSJSONSerialization dataWithJSONObject:payload options:0 error:&jsonError];
     
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:AUTH_VALIDATE_URL]];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:GET_VALIDATE_URL()]];
     [request setHTTPMethod:@"POST"];
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     [request setHTTPBody:jsonData];
@@ -1165,10 +1230,10 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
             
             if (success) {
                 [AuthStorage saveString:key forKey:KEYCHAIN_KEY];
-                NSDictionary *dataDict = json[@"data"];
-                NSString *remainStr = dataDict[@"remaining_formatted"] ?: @"Valid";
-                NSString *token = dataDict[@"token"];
-                NSNumber *expiresAt = dataDict[@"expires_at"];
+                NSDictionary *dataDict = json[@"data"] ?: json;
+                NSString *remainStr = json[@"time_left_human"] ?: (dataDict[@"remaining_formatted"] ?: @"Active");
+                NSString *token = json[@"token"] ?: (dataDict[@"token"] ?: @"VALID");
+                NSNumber *expiresAt = json[@"expires_at"] ?: dataDict[@"expires_at"];
                 
                 // Initialize LiveSecurityGuard
                 [LiveSecurityGuard setAuthorizedSessionWithKey:key token:token expiresAt:expiresAt];
