@@ -8,16 +8,50 @@
 #import <sys/sysctl.h>
 
 // ==========================================
-// Configurable Settings
+// Obfuscated String Engine (Zero Plaintext Domain or Endpoints)
 // ==========================================
-// Set this to your live Bot-Hosting VPS domain / IP + Port
-#define AUTH_SERVER_BASE_URL @"http://fi14.bot-hosting.cloud:25981"
-#define AUTH_VALIDATE_URL    AUTH_SERVER_BASE_URL @"/api/v1/auth/validate"
-#define AUTH_HEARTBEAT_URL   AUTH_SERVER_BASE_URL @"/api/v1/auth/heartbeat"
+static const unsigned char ENC_BASE_URL[] = { 0x32, 0x29, 0x14, 0x13, 0x5C, 0x46, 0x43, 0x09, 0x1B, 0x44, 0x4C, 0x55, 0x1C, 0xEE, 0xF0, 0xAA, 0xE2, 0xE2, 0xE3, 0xE7, 0xFF, 0xF7, 0xFB, 0xB1, 0xC1, 0xC9, 0xC7, 0xDE, 0xCA, 0x8B, 0x86, 0x82, 0x83, 0x85, 0xF1 };
+static const size_t ENC_BASE_URL_LEN = 35;
+
+static const unsigned char ENC_VALIDATE_EP[] = { 0x75, 0x3C, 0x10, 0x0A, 0x49, 0x1F, 0x5D, 0x40, 0x13, 0x00, 0x0C, 0x13, 0x51, 0xF7, 0xE5, 0xEB, 0xE3, 0xE9, 0xF1, 0xE7, 0xF3 };
+static const size_t ENC_VALIDATE_EP_LEN = 21;
+
+static const unsigned char ENC_HEARTBEAT_EP[] = { 0x75, 0x3C, 0x10, 0x0A, 0x49, 0x1F, 0x5D, 0x40, 0x13, 0x00, 0x0C, 0x13, 0x51, 0xE9, 0xE1, 0xE6, 0xF8, 0xF9, 0xF2, 0xF6, 0xF7, 0xED };
+static const size_t ENC_HEARTBEAT_EP_LEN = 22;
+
+static const unsigned char ENC_SUPPORT_URL[] = { 0x32, 0x29, 0x14, 0x13, 0x15, 0x53, 0x43, 0x40, 0x16, 0x1C, 0x0B, 0x18, 0x11, 0xF3, 0xE0, 0xA9, 0xED, 0xEA, 0xBF, 0xFD, 0xDB, 0xC8, 0xFD, 0xFE, 0xCF, 0xE1, 0xE6, 0xC1, 0x9C };
+static const size_t ENC_SUPPORT_URL_LEN = 29;
+
+static inline NSString *GetDecryptedString(const unsigned char *bytes, size_t len, unsigned char key) {
+    char *buf = (char *)malloc(len + 1);
+    if (!buf) return @"";
+    for (size_t i = 0; i < len; i++) {
+        buf[i] = (char)(bytes[i] ^ (unsigned char)((key + (i * 3)) & 0xFF));
+    }
+    buf[len] = '\0';
+    NSString *res = [NSString stringWithUTF8String:buf];
+    free(buf);
+    return res ?: @"";
+}
+
+static inline NSString *GET_SERVER_BASE_URL(void) {
+    return GetDecryptedString(ENC_BASE_URL, ENC_BASE_URL_LEN, 0x5A);
+}
+
+static inline NSString *GET_VALIDATE_URL(void) {
+    return [NSString stringWithFormat:@"%@%@", GET_SERVER_BASE_URL(), GetDecryptedString(ENC_VALIDATE_EP, ENC_VALIDATE_EP_LEN, 0x5A)];
+}
+
+static inline NSString *GET_HEARTBEAT_URL(void) {
+    return [NSString stringWithFormat:@"%@%@", GET_SERVER_BASE_URL(), GetDecryptedString(ENC_HEARTBEAT_EP, ENC_HEARTBEAT_EP_LEN, 0x5A)];
+}
+
+static inline NSString *GET_SUPPORT_URL(void) {
+    return GetDecryptedString(ENC_SUPPORT_URL, ENC_SUPPORT_URL_LEN, 0x5A);
+}
 
 #define APP_TITLE @"EXTERNALFF AUTHENTICATION"
 #define APP_SUBTITLE @"Live Realtime License Verification"
-#define SUPPORT_URL @"https://discord.gg/nMQaamDNj2"
 #define KEYCHAIN_KEY @"com.externalff.auth.license_key"
 #define KEYCHAIN_HWID @"com.externalff.auth.device_hwid"
 
