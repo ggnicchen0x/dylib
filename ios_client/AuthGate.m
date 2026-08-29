@@ -76,91 +76,38 @@ static void SwizzleInstanceMethod(Class cls, SEL origSel, SEL newSel) {
     }
 }
 
-static void SwizzleClassMethod(Class cls, SEL origSel, SEL newSel) {
-    if (!cls) return;
-    Method origMethod = class_getClassMethod(cls, origSel);
-    Method newMethod = class_getClassMethod(cls, newSel);
-    if (!origMethod || !newMethod) return;
-    
-    Class metaClass = object_getClass((id)cls);
-    BOOL didAdd = class_addMethod(metaClass, origSel, method_getImplementation(newMethod), method_getTypeEncoding(newMethod));
-    if (didAdd) {
-        class_replaceMethod(metaClass, newSel, method_getImplementation(origMethod), method_getTypeEncoding(origMethod));
-    } else {
-        method_exchangeImplementations(origMethod, newMethod);
-    }
-}
-
 // ==========================================
-// ProxyVN Internal Gate Integration & Neutralization
+// Neutralize ActivationCard & Internal Gate
 // ==========================================
 static BOOL g_isAuthenticated = NO;
 
-@interface ProxyVNBridge : NSObject
-+ (void)notifyAppGatePassed;
+@interface NSObject (ActivationCardInstanceHooks)
+- (void)hook_showActivationCard;
+- (void)hook_showActivationCardWithError:(id)arg1;
+- (void)hook_buildUI;
+- (BOOL)hook_gateDone;
+- (UIView *)hook_activateGlass;
 @end
-
-@implementation ProxyVNBridge
-
-+ (void)notifyAppGatePassed {
-    g_isAuthenticated = YES;
-    
-    // 1. Notify ActivationCard
-    Class actCardClass = objc_getClass("ActivationCard");
-    if (actCardClass) {
-        SEL finishSel = @selector(finishGate);
-        if ([actCardClass respondsToSelector:finishSel]) {
-            #pragma clang diagnostic push
-            #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-            [actCardClass performSelector:finishSel];
-            #pragma clang diagnostic pop
-        }
-        
-        SEL setDoneSel = @selector(setGateDone:);
-        if ([actCardClass respondsToSelector:setDoneSel]) {
-            NSMethodSignature *sig = [actCardClass methodSignatureForSelector:setDoneSel];
-            if (sig) {
-                NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
-                [inv setTarget:actCardClass];
-                [inv setSelector:setDoneSel];
-                BOOL val = YES;
-                [inv setArgument:&val atIndex:2];
-                [inv invoke];
-            }
-        }
-    }
-    
-    // 2. Notify FluckAuthCore
-    Class fluckClass = objc_getClass("FluckAuthCore");
-    if (fluckClass) {
-        SEL markSel = @selector(markGatePassed);
-        if ([fluckClass respondsToSelector:markSel]) {
-            #pragma clang diagnostic push
-            #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-            [fluckClass performSelector:markSel];
-            #pragma clang diagnostic pop
-        }
-    }
-}
-
-@end
-
-// Hook ActivationCard to prevent original activation dialog and force gateDone = YES
-@interface NSObject (ActivationCardHooks)
-@end
-
-@implementation NSObject (ActivationCardHooks)
+@implementation NSObject (ActivationCardInstanceHooks)
 
 - (void)hook_showActivationCard {
-    // Suppress original activation dialog
+    // Completely suppress original activation card popup
 }
 
 - (void)hook_showActivationCardWithError:(id)arg1 {
-    // Suppress original activation dialog
+    // Completely suppress original activation error popup
+}
+
+- (void)hook_buildUI {
+    // Suppress creation of the full-screen _activateGlass blackout overlay
 }
 
 - (BOOL)hook_gateDone {
-    return g_isAuthenticated;
+    return YES;
+}
+
+- (UIView *)hook_activateGlass {
+    return nil;
 }
 
 @end
@@ -367,12 +314,14 @@ static BOOL g_isAuthenticated = NO;
 + (void)install {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        // 1. ActivationCard hooks to neutralize old gate and return gateDone = YES
+        // 1. ActivationCard INSTANCE hooks (prevents _activateGlass overlay and returns gateDone = YES)
         Class actCardClass = objc_getClass("ActivationCard");
         if (actCardClass) {
-            SwizzleClassMethod(actCardClass, @selector(showActivationCard), @selector(hook_showActivationCard));
-            SwizzleClassMethod(actCardClass, @selector(showActivationCardWithError:), @selector(hook_showActivationCardWithError:));
-            SwizzleClassMethod(actCardClass, @selector(gateDone), @selector(hook_gateDone));
+            SwizzleInstanceMethod(actCardClass, @selector(showActivationCard), @selector(hook_showActivationCard));
+            SwizzleInstanceMethod(actCardClass, @selector(showActivationCardWithError:), @selector(hook_showActivationCardWithError:));
+            SwizzleInstanceMethod(actCardClass, @selector(buildUI), @selector(hook_buildUI));
+            SwizzleInstanceMethod(actCardClass, @selector(gateDone), @selector(hook_gateDone));
+            SwizzleInstanceMethod(actCardClass, @selector(activateGlass), @selector(hook_activateGlass));
         }
         
         // 2. MenuSwitchItem class hook
@@ -652,8 +601,7 @@ static BOOL g_isAuthenticated = NO;
                 self.statusLabel.textColor = [UIColor colorWithRed:0.2 green:0.85 blue:0.45 alpha:1.0];
                 self.statusLabel.text = [NSString stringWithFormat:@"Access Granted! (%@)", remainStr];
                 
-                // Notify ProxyVN internal engine that gate has passed
-                [ProxyVNBridge notifyAppGatePassed];
+                g_isAuthenticated = YES;
                 
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                     if (self.onSuccessBlock) {
