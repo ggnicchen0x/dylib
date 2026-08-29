@@ -118,12 +118,16 @@
             } else if ([text containsString:@"no target file"] || [text containsString:@"patch bytes"]) {
                 lbl.textColor = THEME_TEXT_MUTED;
                 lbl.font = [UIFont systemFontOfSize:11 weight:UIFontWeightRegular];
-            } else if ([text containsString:@"sandbox"]) {
-                lbl.textColor = [UIColor colorWithRed:0.7 green:0.75 blue:0.85 alpha:1.0];
-            } else {
-                // Feature label (e.g. "Drag", "100% Body", "Maggic Bullet", "ModChest")
+            } else if ([text isEqualToString:@"Drag"] || [text isEqualToString:@"100% Body"] || [text isEqualToString:@"95% Body"] || [text isEqualToString:@"Maggic Bullet"] || [text isEqualToString:@"ModChest"]) {
+                // Feature label: Dark bold black for clear visibility on the white card
+                lbl.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
+                lbl.font = [UIFont systemFontOfSize:15 weight:UIFontWeightBold];
+            } else if ([text containsString:@"Select an option"] || [text isEqualToString:@"Free Fire"] || [text isEqualToString:@"Lifetime"]) {
                 lbl.textColor = THEME_TEXT_WHITE;
-                lbl.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
+                lbl.font = [UIFont systemFontOfSize:13 weight:UIFontWeightBold];
+            } else {
+                lbl.textColor = [UIColor colorWithRed:0.08 green:0.10 blue:0.15 alpha:1.0];
+                lbl.font = [UIFont systemFontOfSize:14 weight:UIFontWeightBold];
             }
         }
         
