@@ -6,6 +6,8 @@
 #import <CommonCrypto/CommonDigest.h>
 #import <mach-o/dyld.h>
 #import <sys/sysctl.h>
+#import <AVFoundation/AVFoundation.h>
+#import <AudioToolbox/AudioToolbox.h>
 
 // ==========================================
 // Obfuscated String Engine (Zero Plaintext Domain or Endpoints)
@@ -181,13 +183,156 @@ static inline NSString *GET_SUPPORT_URL(void) {
 @end
 
 // ==========================================
-// Targeted Main Menu Theme Styler
+// Persistent Background Audio & Keep-Alive Engine
+// Prevents iOS from suspending or killing app when minimized
+// ==========================================
+@interface BackgroundKeepAliveEngine : NSObject
++ (instancetype)shared;
+- (void)startBackgroundKeepAlive;
+- (void)stopBackgroundKeepAlive;
+@end
+
+@interface BackgroundKeepAliveEngine ()
+@property (nonatomic, strong) AVAudioPlayer *audioPlayer;
+@property (nonatomic, assign) UIBackgroundTaskIdentifier bgTask;
+@end
+
+@implementation BackgroundKeepAliveEngine
+
++ (instancetype)shared {
+    static BackgroundKeepAliveEngine *inst = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        inst = [[BackgroundKeepAliveEngine alloc] init];
+    });
+    return inst;
+}
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        _bgTask = UIBackgroundTaskInvalid;
+        [self setupNotifications];
+    }
+    return self;
+}
+
+- (void)setupNotifications {
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleDidEnterBackground)
+                                                 name:UIApplicationDidEnterBackgroundNotification
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(handleWillEnterForeground)
+                                                 name:UIApplicationWillEnterForegroundNotification
+                                               object:nil];
+}
+
+- (void)handleDidEnterBackground {
+    [self startBackgroundTask];
+    [self ensureAudioPlaying];
+}
+
+- (void)handleWillEnterForeground {
+    [self endBackgroundTask];
+}
+
+- (void)startBackgroundTask {
+    [self endBackgroundTask];
+    self.bgTask = [[UIApplication sharedApplication] beginBackgroundTaskWithName:@"ExternalFF_BackgroundKeepAlive" expirationHandler:^{
+        [self endBackgroundTask];
+    }];
+}
+
+- (void)endBackgroundTask {
+    if (self.bgTask != UIBackgroundTaskInvalid) {
+        [[UIApplication sharedApplication] endBackgroundTask:self.bgTask];
+        self.bgTask = UIBackgroundTaskInvalid;
+    }
+}
+
+- (NSData *)generateSilentWavData {
+    uint32_t sampleRate = 8000;
+    uint32_t numSamples = 8000;
+    uint32_t dataChunkSize = numSamples;
+    uint32_t fileSize = 36 + dataChunkSize;
+    
+    NSMutableData *data = [NSMutableData dataWithCapacity:44 + numSamples];
+    [data appendBytes:"RIFF" length:4];
+    [data appendBytes:&fileSize length:4];
+    [data appendBytes:"WAVE" length:4];
+    [data appendBytes:"fmt " length:4];
+    uint32_t fmtLength = 16;
+    uint16_t audioFormat = 1;
+    uint16_t numChannels = 1;
+    uint32_t byteRate = sampleRate;
+    uint16_t blockAlign = 1;
+    uint16_t bitsPerSample = 8;
+    [data appendBytes:&fmtLength length:4];
+    [data appendBytes:&audioFormat length:2];
+    [data appendBytes:&numChannels length:2];
+    [data appendBytes:&sampleRate length:4];
+    [data appendBytes:&byteRate length:4];
+    [data appendBytes:&blockAlign length:2];
+    [data appendBytes:&bitsPerSample length:2];
+    [data appendBytes:"data" length:4];
+    [data appendBytes:&dataChunkSize length:4];
+    uint8_t silenceByte = 128;
+    for (uint32_t i = 0; i < numSamples; i++) {
+        [data appendBytes:&silenceByte length:1];
+    }
+    return data;
+}
+
+- (void)ensureAudioPlaying {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        @try {
+            AVAudioSession *session = [AVAudioSession sharedInstance];
+            [session setCategory:AVAudioSessionCategoryPlayback
+                     withOptions:(AVAudioSessionCategoryOptionMixWithOthers | AVAudioSessionCategoryOptionAllowBluetooth)
+                           error:nil];
+            [session setActive:YES error:nil];
+            
+            if (!self.audioPlayer) {
+                NSData *wavData = [self generateSilentWavData];
+                NSError *playerError = nil;
+                self.audioPlayer = [[AVAudioPlayer alloc] initWithData:wavData error:&playerError];
+                self.audioPlayer.numberOfLoops = -1;
+                self.audioPlayer.volume = 0.001;
+                [self.audioPlayer prepareToPlay];
+            }
+            
+            if (!self.audioPlayer.isPlaying) {
+                [self.audioPlayer play];
+            }
+        } @catch (NSException *exception) {}
+    });
+}
+
+- (void)startBackgroundKeepAlive {
+    [self ensureAudioPlaying];
+}
+
+- (void)stopBackgroundKeepAlive {
+    [self.audioPlayer stop];
+    self.audioPlayer = nil;
+    [self endBackgroundTask];
+}
+
+@end
+
+// ==========================================
+// Targeted Main Menu Theme Styler & Switch State Engine
 // ==========================================
 @interface MainMenuThemeEngine : NSObject
 + (void)styleViewController:(UIViewController *)vc;
 + (void)styleViewHierarchy:(UIView *)view isRoot:(BOOL)isRoot;
 + (void)realignMenuLayout:(UIViewController *)vc;
 + (void)updateStatusLabelOnController:(UIViewController *)vc message:(NSString *)msg;
++ (void)restoreAllSwitchStatesInViewController:(UIViewController *)vc;
++ (void)restoreSwitchesInViewHierarchy:(UIView *)view className:(NSString *)cname;
++ (void)setAllSwitchesInView:(UIView *)view toOn:(BOOL)on;
++ (void)clearAllPersistedSwitchStates;
 @end
 
 @implementation MainMenuThemeEngine
@@ -537,6 +682,51 @@ static inline NSString *GET_SUPPORT_URL(void) {
     }
 }
 
++ (void)restoreAllSwitchStatesInViewController:(UIViewController *)vc {
+    if (!vc || !vc.view) return;
+    NSString *cname = NSStringFromClass([vc class]);
+    if (![cname containsString:@"Exploit"] && ![cname containsString:@"Proxy"]) return;
+    [self restoreSwitchesInViewHierarchy:vc.view className:cname];
+}
+
++ (void)restoreSwitchesInViewHierarchy:(UIView *)view className:(NSString *)cname {
+    if (!view) return;
+    for (UIView *sub in view.subviews) {
+        if ([sub isKindOfClass:[UISwitch class]]) {
+            UISwitch *sw = (UISwitch *)sub;
+            NSString *optKey = [NSString stringWithFormat:@"kExtFF_Switch_%@_Opt%ld", cname, (long)sw.tag];
+            if ([[NSUserDefaults standardUserDefaults] objectForKey:optKey]) {
+                BOOL savedOn = [[NSUserDefaults standardUserDefaults] boolForKey:optKey];
+                if (sw.isOn != savedOn) {
+                    [sw setOn:savedOn animated:NO];
+                }
+            }
+        }
+        [self restoreSwitchesInViewHierarchy:sub className:cname];
+    }
+}
+
++ (void)setAllSwitchesInView:(UIView *)view toOn:(BOOL)on {
+    if (!view) return;
+    for (UIView *sub in view.subviews) {
+        if ([sub isKindOfClass:[UISwitch class]]) {
+            UISwitch *sw = (UISwitch *)sub;
+            [sw setOn:on animated:YES];
+        }
+        [self setAllSwitchesInView:sub toOn:on];
+    }
+}
+
++ (void)clearAllPersistedSwitchStates {
+    NSDictionary *allDefaults = [[NSUserDefaults standardUserDefaults] dictionaryRepresentation];
+    for (NSString *k in allDefaults.allKeys) {
+        if ([k hasPrefix:@"kExtFF_Switch_"]) {
+            [[NSUserDefaults standardUserDefaults] removeObjectForKey:k];
+        }
+    }
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
 @end
 
 // ==========================================
@@ -625,7 +815,37 @@ static inline NSString *GET_SUPPORT_URL(void) {
     if ([t containsString:@"Maggic"] || [t containsString:@"Magic"]) {
         title = @"200% Magic Bullet";
     }
-    return [self hook_addSwitchRowWithTitle:title option:option toContainer:container y:y];
+    
+    double nextY = [self hook_addSwitchRowWithTitle:title option:option toContainer:container y:y];
+    
+    // Look up saved persistent state for this switch and restore immediately
+    NSString *cname = NSStringFromClass([self class]);
+    NSString *optKey = [NSString stringWithFormat:@"kExtFF_Switch_%@_Opt%ld", cname, (long)option];
+    
+    if ([[NSUserDefaults standardUserDefaults] objectForKey:optKey] != nil) {
+        BOOL savedOn = [[NSUserDefaults standardUserDefaults] boolForKey:optKey];
+        if (container) {
+            for (UIView *sub in container.subviews) {
+                if ([sub isKindOfClass:[UISwitch class]]) {
+                    UISwitch *sw = (UISwitch *)sub;
+                    if (sw.tag == option || (sw.frame.origin.y >= y - 10 && sw.frame.origin.y <= nextY + 10)) {
+                        [sw setOn:savedOn animated:NO];
+                    }
+                } else if (sub.subviews.count > 0) {
+                    for (UIView *nested in sub.subviews) {
+                        if ([nested isKindOfClass:[UISwitch class]]) {
+                            UISwitch *sw = (UISwitch *)nested;
+                            if (sw.tag == option || (sub.frame.origin.y >= y - 10 && sub.frame.origin.y <= nextY + 10)) {
+                                [sw setOn:savedOn animated:NO];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    return nextY;
 }
 
 @end
@@ -869,6 +1089,14 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 
 @implementation UIViewController (ExploitThemeHook)
 
+- (void)hook_viewWillAppear:(BOOL)animated {
+    [self hook_viewWillAppear:animated];
+    NSString *className = NSStringFromClass([self class]);
+    if ([className containsString:@"Exploit"] || [className containsString:@"Proxy"]) {
+        [MainMenuThemeEngine restoreAllSwitchStatesInViewController:self];
+    }
+}
+
 - (void)hook_viewDidLayoutSubviews {
     [self hook_viewDidLayoutSubviews];
     NSString *className = NSStringFromClass([self class]);
@@ -882,6 +1110,10 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
             self.navigationItem.title = @"Home";
             self.tabBarItem.title = @"Home";
         }
+        
+        // Restore all switch states
+        [MainMenuThemeEngine restoreAllSwitchStatesInViewController:self];
+        
         // Apply theme styling only once to prevent re-layout stutter when toggling switches
         static const char *kThemeAppliedKey = "kExternalFFThemeAppliedKey";
         if (!objc_getAssociatedObject(self, kThemeAppliedKey)) {
@@ -1143,6 +1375,12 @@ static BOOL g_userExplicitlyStopped = NO;
             else title = @"Feature";
         }
         
+        // 1. Persist state to NSUserDefaults immediately
+        NSString *cname = NSStringFromClass([self class]);
+        NSString *optKey = [NSString stringWithFormat:@"kExtFF_Switch_%@_Opt%ld", cname, (long)sw.tag];
+        [[NSUserDefaults standardUserDefaults] setBool:isOn forKey:optKey];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        
         NSString *statusMsg = isOn ? [NSString stringWithFormat:@"%@ applied ✓", title] : [NSString stringWithFormat:@"%@ restored", title];
         
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -1153,6 +1391,10 @@ static BOOL g_userExplicitlyStopped = NO;
 
 - (void)hook_resetTapped:(id)sender {
     [self hook_resetTapped:sender];
+    [MainMenuThemeEngine clearAllPersistedSwitchStates];
+    if (self.view) {
+        [MainMenuThemeEngine setAllSwitchesInView:self.view toOn:NO];
+    }
     dispatch_async(dispatch_get_main_queue(), ^{
         [MainMenuThemeEngine updateStatusLabelOnController:self message:@"All features reset & restored."];
     });
@@ -1165,6 +1407,11 @@ static BOOL g_userExplicitlyStopped = NO;
         return;
     }
     [self hook_homeFgAttachSwitchChanged:sender];
+    if ([sender isKindOfClass:[UISwitch class]]) {
+        UISwitch *sw = (UISwitch *)sender;
+        [[NSUserDefaults standardUserDefaults] setBool:sw.isOn forKey:@"kExtFF_Switch_HomeFgAttach"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
 }
 
 - (void)hook_homeHudSwitchChanged:(id)sender {
@@ -1174,6 +1421,11 @@ static BOOL g_userExplicitlyStopped = NO;
         return;
     }
     [self hook_homeHudSwitchChanged:sender];
+    if ([sender isKindOfClass:[UISwitch class]]) {
+        UISwitch *sw = (UISwitch *)sender;
+        [[NSUserDefaults standardUserDefaults] setBool:sw.isOn forKey:@"kExtFF_Switch_HomeHud"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
 }
 
 - (void)hook_homeKgvnSwitchChanged:(id)sender {
@@ -1183,6 +1435,11 @@ static BOOL g_userExplicitlyStopped = NO;
         return;
     }
     [self hook_homeKgvnSwitchChanged:sender];
+    if ([sender isKindOfClass:[UISwitch class]]) {
+        UISwitch *sw = (UISwitch *)sender;
+        [[NSUserDefaults standardUserDefaults] setBool:sw.isOn forKey:@"kExtFF_Switch_HomeKgvn"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
 }
 
 - (void)hook_runBackgroundCheatTick {
@@ -1255,6 +1512,7 @@ static BOOL g_userExplicitlyStopped = NO;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         SwizzleMethod([UIViewController class], @selector(viewDidLayoutSubviews), @selector(hook_viewDidLayoutSubviews));
+        SwizzleMethod([UIViewController class], @selector(viewWillAppear:), @selector(hook_viewWillAppear:));
         SwizzleMethod([UIViewController class], @selector(setTitle:), @selector(hook_vc_setTitle:));
         SwizzleMethod([UIViewController class], @selector(supportedInterfaceOrientations), @selector(hook_supportedInterfaceOrientations));
         SwizzleMethod([UIViewController class], @selector(shouldAutorotate), @selector(hook_shouldAutorotate));
@@ -1299,6 +1557,7 @@ static BOOL g_userExplicitlyStopped = NO;
             SwizzleMethod(noExpVCClass, @selector(addSwitchRowWithTitle:option:toContainer:y:), @selector(hook_addSwitchRowWithTitle:option:toContainer:y:));
             SwizzleMethod(noExpVCClass, @selector(switchChanged:), @selector(hook_switchChanged:));
             SwizzleMethod(noExpVCClass, @selector(startTapped), @selector(hook_startTapped));
+            SwizzleMethod(noExpVCClass, @selector(resetTapped), @selector(hook_resetTapped:));
         }
         
         Class rootVCClass = objc_getClass("RootViewController");
@@ -2047,35 +2306,49 @@ static BOOL g_sessionAuthorizedInMemory = NO;
     dispatch_async(dispatch_get_main_queue(), ^{
         [UIViewController installThemeHooks];
         
+        // Ensure background audio keep-alive engine is active
+        [[BackgroundKeepAliveEngine shared] startBackgroundKeepAlive];
+        
         // If already verified in memory during this active session, stay in menu seamlessly
         if (g_sessionAuthorizedInMemory) {
+            for (UIWindow *w in [UIApplication sharedApplication].windows) {
+                if (!w.hidden && w.rootViewController) {
+                    [MainMenuThemeEngine restoreAllSwitchStatesInViewController:w.rootViewController];
+                }
+            }
             return;
         }
         
         NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
         if (savedKey && savedKey.length > 0) {
-            // Validate saved key with server to verify it was NOT deleted, banned, or expired
-            [LiveSecurityGuard validateSavedKeyOnStartupWithCompletion:^(BOOL valid, NSString *errorMsg) {
-                if (valid) {
-                    // Valid! Transition directly to cheat menu without displaying login card
-                    for (UIWindow *w in [UIApplication sharedApplication].windows) {
-                        if (w != self.authWindow) {
-                            Class rootVCClass = objc_getClass("RootViewController");
-                            if (rootVCClass) {
-                                UIViewController *existing = w.rootViewController;
-                                if (!existing || ![existing isKindOfClass:rootVCClass]) {
-                                    w.rootViewController = [[rootVCClass alloc] init];
-                                }
-                            }
-                            [w makeKeyAndVisible];
-                            if (w.rootViewController) {
-                                [MainMenuThemeEngine styleViewController:w.rootViewController];
-                            }
-                            break;
+            // Optimistically authorize session in memory immediately so UI renders with zero lag
+            g_sessionAuthorizedInMemory = YES;
+            [LiveSecurityGuard shared].isAuthorized = YES;
+            
+            for (UIWindow *w in [UIApplication sharedApplication].windows) {
+                if (w != self.authWindow) {
+                    Class rootVCClass = objc_getClass("RootViewController");
+                    if (rootVCClass) {
+                        UIViewController *existing = w.rootViewController;
+                        if (!existing || ![existing isKindOfClass:rootVCClass]) {
+                            w.rootViewController = [[rootVCClass alloc] init];
                         }
                     }
-                } else {
-                    // Key was deleted from server or is invalid/expired! Show login window with server error
+                    [w makeKeyAndVisible];
+                    if (w.rootViewController) {
+                        [MainMenuThemeEngine styleViewController:w.rootViewController];
+                        [MainMenuThemeEngine restoreAllSwitchStatesInViewController:w.rootViewController];
+                    }
+                    break;
+                }
+            }
+            
+            // Validate saved key in background with server
+            [LiveSecurityGuard validateSavedKeyOnStartupWithCompletion:^(BOOL valid, NSString *errorMsg) {
+                if (!valid) {
+                    // Key was revoked or expired on server
+                    g_sessionAuthorizedInMemory = NO;
+                    [LiveSecurityGuard shared].isAuthorized = NO;
                     [self showAuthWindowWithError:errorMsg];
                 }
             }];
@@ -2108,6 +2381,7 @@ static BOOL g_sessionAuthorizedInMemory = NO;
                 if (!w.hidden && w.rootViewController) {
                     [w makeKeyAndVisible];
                     [MainMenuThemeEngine styleViewController:w.rootViewController];
+                    [MainMenuThemeEngine restoreAllSwitchStatesInViewController:w.rootViewController];
                     break;
                 }
             }
@@ -2170,6 +2444,7 @@ static BOOL g_sessionAuthorizedInMemory = NO;
                 [appWindow makeKeyAndVisible];
                 if (appWindow.rootViewController) {
                     [MainMenuThemeEngine styleViewController:appWindow.rootViewController];
+                    [MainMenuThemeEngine restoreAllSwitchStatesInViewController:appWindow.rootViewController];
                 }
             }
         }];
@@ -2191,7 +2466,10 @@ static void InitAuthGate() {
     // 1. Install all swizzles & neutralizations immediately before App Delegate runs
     [UIViewController installThemeHooks];
     
-    // 2. Present AuthGate UI once application finishes launching
+    // 2. Start Background Keep-Alive Audio & Task Handler immediately
+    [[BackgroundKeepAliveEngine shared] startBackgroundKeepAlive];
+    
+    // 3. Present AuthGate UI once application finishes launching
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
                                                       object:nil
                                                        queue:[NSOperationQueue mainQueue]
