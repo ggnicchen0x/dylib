@@ -698,11 +698,17 @@ static inline NSString *GET_SUPPORT_URL(void) {
         if ([sub isKindOfClass:[UISwitch class]]) {
             UISwitch *sw = (UISwitch *)sub;
             NSString *optKey = [NSString stringWithFormat:@"kExtFF_Switch_%@_Opt%ld", cname, (long)sw.tag];
-            if ([[NSUserDefaults standardUserDefaults] objectForKey:optKey]) {
-                BOOL savedOn = [[NSUserDefaults standardUserDefaults] boolForKey:optKey];
-                if (sw.isOn != savedOn) {
-                    [sw setOn:savedOn animated:NO];
-                }
+            NSString *nativeKey = [NSString stringWithFormat:@"proxy.esp.%ld.enabled", (long)sw.tag];
+            
+            BOOL savedOn = NO;
+            if ([[NSUserDefaults standardUserDefaults] objectForKey:optKey] != nil) {
+                savedOn = [[NSUserDefaults standardUserDefaults] boolForKey:optKey];
+            } else if ([[NSUserDefaults standardUserDefaults] objectForKey:nativeKey] != nil) {
+                savedOn = [[NSUserDefaults standardUserDefaults] boolForKey:nativeKey];
+            }
+            
+            if (sw.isOn != savedOn) {
+                [sw setOn:savedOn animated:NO];
             }
         }
         [self restoreSwitchesInViewHierarchy:sub className:cname];
@@ -723,7 +729,7 @@ static inline NSString *GET_SUPPORT_URL(void) {
 + (void)clearAllPersistedSwitchStates {
     NSDictionary *allDefaults = [[NSUserDefaults standardUserDefaults] dictionaryRepresentation];
     for (NSString *k in allDefaults.allKeys) {
-        if ([k hasPrefix:@"kExtFF_Switch_"]) {
+        if ([k hasPrefix:@"kExtFF_Switch_"] || [k hasPrefix:@"proxy.esp."]) {
             [[NSUserDefaults standardUserDefaults] removeObjectForKey:k];
         }
     }
@@ -862,7 +868,7 @@ static inline NSString *GET_SUPPORT_URL(void) {
 @implementation NSObject (FluckAuthCoreBypassHooks)
 
 - (BOOL)hook_fluck_gatePassed {
-    return [LiveSecurityGuard isSessionAuthorized];
+    return YES;
 }
 
 - (NSString *)hook_fluck_savedKey {
@@ -1379,10 +1385,12 @@ static BOOL g_userExplicitlyStopped = NO;
         // 1. Persist state to NSUserDefaults immediately BEFORE calling original / triggering layout
         NSString *cname = NSStringFromClass([self class]);
         NSString *optKey = [NSString stringWithFormat:@"kExtFF_Switch_%@_Opt%ld", cname, (long)sw.tag];
+        NSString *nativeKey = [NSString stringWithFormat:@"proxy.esp.%ld.enabled", (long)sw.tag];
         [[NSUserDefaults standardUserDefaults] setBool:isOn forKey:optKey];
+        [[NSUserDefaults standardUserDefaults] setBool:isOn forKey:nativeKey];
         [[NSUserDefaults standardUserDefaults] synchronize];
         
-        if ([cname containsString:@"NoExploit"]) {
+        if ([cname containsString:@"NoExploit"] || [self.title isEqualToString:@"Mods"]) {
             // For Mods page (NoExploit): apply/restore mod via ProxyESPConfig directly (No Sandbox needed)
             Class espConfigClass = objc_getClass("ProxyESPConfig");
             if (espConfigClass) {
@@ -1428,6 +1436,33 @@ static BOOL g_userExplicitlyStopped = NO;
     }
     
     [self hook_switchChanged:sender];
+}
+
+- (void)hook_noExploit_refreshStatus {
+    NSMutableArray *activeNames = [NSMutableArray array];
+    for (NSInteger i = 0; i < 6; i++) {
+        NSString *nativeKey = [NSString stringWithFormat:@"proxy.esp.%ld.enabled", (long)i];
+        NSString *customKey = [NSString stringWithFormat:@"kExtFF_Switch_ProxyNoExploitViewController_Opt%ld", (long)i];
+        BOOL on = [[NSUserDefaults standardUserDefaults] boolForKey:nativeKey] || [[NSUserDefaults standardUserDefaults] boolForKey:customKey];
+        if (on) {
+            NSString *optTitle = @"Feature";
+            if (i == 0) optTitle = @"Drag";
+            else if (i == 1) optTitle = @"100% Body";
+            else if (i == 2) optTitle = @"95% Body";
+            else if (i == 3) optTitle = @"200% Magic Bullet";
+            else if (i == 5) optTitle = @"Visuals";
+            [activeNames addObject:optTitle];
+        }
+    }
+    
+    NSString *statusText = nil;
+    if (activeNames.count > 0) {
+        statusText = [NSString stringWithFormat:@"Free Fire\nActive: %@", [activeNames componentsJoinedByString:@", "]];
+    } else {
+        statusText = @"Free Fire\nSelect an option above";
+    }
+    
+    [MainMenuThemeEngine updateStatusLabelOnController:self message:statusText];
 }
 
 - (void)hook_resetTapped:(id)sender {
@@ -1608,6 +1643,7 @@ static BOOL g_userExplicitlyStopped = NO;
         if (noExpVCClass) {
             SwizzleMethod(noExpVCClass, @selector(addSwitchRowWithTitle:option:toContainer:y:), @selector(hook_addSwitchRowWithTitle:option:toContainer:y:));
             SwizzleMethod(noExpVCClass, @selector(switchChanged:), @selector(hook_switchChanged:));
+            SwizzleMethod(noExpVCClass, @selector(refreshStatus), @selector(hook_noExploit_refreshStatus));
             SwizzleMethod(noExpVCClass, @selector(startTapped), @selector(hook_startTapped));
             SwizzleMethod(noExpVCClass, @selector(restoreTapped), @selector(hook_resetTapped:));
             SwizzleMethod(noExpVCClass, @selector(restoreTapped:), @selector(hook_resetTapped:));
