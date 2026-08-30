@@ -3,7 +3,32 @@
 #import <QuartzCore/QuartzCore.h>
 
 #define BACKEND_SERVER_URL @"http://fi14.bot-hosting.cloud:25981/server.php"
-#define LICENSE_KEY_STORAGE @"fluck.license.key"
+#define LICENSE_KEY_STORAGE @"external.license.key"
+
+#pragma mark - FluckAuthCore Runtime Interception
+
+@interface FluckAuthCoreHook : NSObject
+@end
+
+@implementation FluckAuthCoreHook
+
+- (NSString *)hooked_savedKey {
+    return [[NSUserDefaults standardUserDefaults] stringForKey:LICENSE_KEY_STORAGE];
+}
+
+@end
+
+static void InstallAuthHooks(void) {
+    Class coreClass = NSClassFromString(@"FluckAuthCore");
+    if (coreClass) {
+        Method orig = class_getInstanceMethod(coreClass, NSSelectorFromString(@"savedKey"));
+        Method hook = class_getInstanceMethod([FluckAuthCoreHook class], @selector(hooked_savedKey));
+        if (orig && hook) {
+            method_setImplementation(orig, method_getImplementation(hook));
+            NSLog(@"[AuthGate] FluckAuthCore::savedKey intercepted -> routed to %@", LICENSE_KEY_STORAGE);
+        }
+    }
+}
 
 #pragma mark - AuthGateViewController Interface
 
@@ -272,8 +297,11 @@
     [self setLoading:YES];
     [self updateStatus:isAutoLogin ? @"Verifying saved license..." : @"Validating with authentication server..." isError:NO];
     
+    NSString *udid = [[[UIDevice currentDevice] identifierForVendor] UUIDString] ?: @"IOS-DEVICE-1";
     NSString *escapedKey = [key stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
-    NSString *urlString = [NSString stringWithFormat:@"%@?license_key=%@", BACKEND_SERVER_URL, escapedKey];
+    NSString *escapedUdid = [udid stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+    
+    NSString *urlString = [NSString stringWithFormat:@"%@?license_key=%@&udid=%@", BACKEND_SERVER_URL, escapedKey, escapedUdid];
     NSURL *url = [NSURL URLWithString:urlString];
     
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
@@ -293,8 +321,20 @@
             NSString *responseString = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
             
             if (httpResponse.statusCode == 200 && responseString && [responseString containsString:@"momo"]) {
+                // Store strictly under external.license.key
                 [[NSUserDefaults standardUserDefaults] setObject:key forKey:LICENSE_KEY_STORAGE];
                 [[NSUserDefaults standardUserDefaults] synchronize];
+                
+                Class coreClass = NSClassFromString(@"FluckAuthCore");
+                if (coreClass) {
+                    id sharedCore = [coreClass performSelector:NSSelectorFromString(@"shared")];
+                    if (sharedCore && [sharedCore respondsToSelector:NSSelectorFromString(@"saveKey:")]) {
+                        [sharedCore performSelector:NSSelectorFromString(@"saveKey:") withObject:key];
+                    }
+                    if (sharedCore && [sharedCore respondsToSelector:NSSelectorFromString(@"markGatePassed")]) {
+                        [sharedCore performSelector:NSSelectorFromString(@"markGatePassed")];
+                    }
+                }
                 
                 [self updateStatus:@"Activated successfully! Launching..." isError:NO];
                 
@@ -302,7 +342,7 @@
                     [self finishAuthentication];
                 });
             } else if (httpResponse.statusCode == 403) {
-                [self updateStatus:@"License key has expired or is revoked." isError:YES];
+                [self updateStatus:@"License key has expired, is revoked, or bound to another device." isError:YES];
             } else if (httpResponse.statusCode == 401) {
                 [self updateStatus:@"Invalid license key. Please check your key." isError:YES];
             } else {
@@ -315,16 +355,6 @@
 }
 
 - (void)finishAuthentication {
-    Class coreClass = NSClassFromString(@"FluckAuthCore");
-    if (coreClass) {
-        id sharedCore = [coreClass performSelector:NSSelectorFromString(@"shared")];
-        if (sharedCore) {
-            if ([sharedCore respondsToSelector:NSSelectorFromString(@"markGatePassed")]) {
-                [sharedCore performSelector:NSSelectorFromString(@"markGatePassed")];
-            }
-        }
-    }
-    
     [UIView animateWithDuration:0.3 animations:^{
         self.view.alpha = 0.0;
         self.view.transform = CGAffineTransformMakeScale(1.05, 1.05);
@@ -368,6 +398,8 @@ static void PresentAuthGate(void) {
 __attribute__((constructor))
 static void AuthGateInitialize(void) {
     NSLog(@"[AuthGate] Dynamic Library Loaded Successfully");
+    
+    InstallAuthHooks();
     
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
                                                       object:nil
