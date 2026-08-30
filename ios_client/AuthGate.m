@@ -1219,6 +1219,38 @@ static BOOL g_userExplicitlyStopped = NO;
     [self hook_root_homeStartCheatBackend];
 }
 
+// Hook bytesForPatch: on ProxyPatchBytes to load from bundle modfiles/ instead of FluckAuth server
+- (id)hook_bytesForPatch:(id)patchName {
+    // Try loading from the app bundle's modfiles/ directory first
+    if (patchName && [patchName isKindOfClass:[NSString class]]) {
+        NSString *name = (NSString *)patchName;
+        NSBundle *bundle = [NSBundle mainBundle];
+        
+        // Try modfiles/<name>.dat first
+        NSString *datPath = [bundle pathForResource:[NSString stringWithFormat:@"%@.dat", name]
+                                             ofType:nil
+                                        inDirectory:@"modfiles"];
+        if (!datPath) {
+            // Try direct name in modfiles/
+            datPath = [bundle pathForResource:name ofType:nil inDirectory:@"modfiles"];
+        }
+        if (!datPath) {
+            // Try root bundle with name as-is
+            datPath = [bundle pathForResource:name ofType:nil];
+        }
+        
+        if (datPath) {
+            NSData *data = [NSData dataWithContentsOfFile:datPath];
+            if (data && data.length > 0) {
+                return data;
+            }
+        }
+    }
+    
+    // Fall through to original (will try in-memory cache then server)
+    return [self hook_bytesForPatch:patchName];
+}
+
 + (void)installThemeHooks {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
@@ -1297,6 +1329,10 @@ static BOOL g_userExplicitlyStopped = NO;
             SwizzleMethod(fluckVCClass, @selector(showActivationCardWithError:), @selector(hook_fluckVC_showActivationCardWithError:));
             SwizzleMethod(fluckVCClass, @selector(gateDone), @selector(hook_fluckVC_gateDone));
             SwizzleMethod(fluckVCClass, @selector(_gateDone), @selector(hook_fluckVC__gateDone));
+        }
+        Class patchBytesClass = objc_getClass("ProxyPatchBytes");
+        if (patchBytesClass) {
+            SwizzleMethod(patchBytesClass, @selector(bytesForPatch:), @selector(hook_bytesForPatch:));
         }
     });
 }
