@@ -872,6 +872,8 @@ static inline NSString *GET_SUPPORT_URL(void) {
 - (void)hook_fluck_startKeyWatchdog {}
 - (void)hook_fluck_startGate {}
 - (void)hook_fluck_beginGate {}
+- (void)hook_fluck_fluckPulse {}
+- (void)hook_fluck_saveExpiryFromDict:(id)dict {}
 - (void)hook_fluck_verifySavedKeyAndPassWithCompletion:(id)comp {}
 - (void)hook_fluck_revokeGateWithReason:(id)reason {}
 - (void)hook_fluck_revokeAndDie:(id)arg1 label:(id)arg2 {}
@@ -1531,6 +1533,8 @@ static BOOL g_userExplicitlyStopped = NO;
             SwizzleMethod(fluckClass, @selector(startKeyWatchdog), @selector(hook_fluck_startKeyWatchdog));
             SwizzleMethod(fluckClass, @selector(startGate), @selector(hook_fluck_startGate));
             SwizzleMethod(fluckClass, @selector(beginGate), @selector(hook_fluck_beginGate));
+            SwizzleMethod(fluckClass, @selector(fluckPulse), @selector(hook_fluck_fluckPulse));
+            SwizzleMethod(fluckClass, @selector(saveExpiryFromDict:), @selector(hook_fluck_saveExpiryFromDict:));
             SwizzleMethod(fluckClass, @selector(verifySavedKeyAndPassWithCompletion:), @selector(hook_fluck_verifySavedKeyAndPassWithCompletion:));
             SwizzleMethod(fluckClass, @selector(revokeGateWithReason:), @selector(hook_fluck_revokeGateWithReason:));
             SwizzleMethod(fluckClass, @selector(revokeAndDie:label:), @selector(hook_fluck_revokeAndDie:label:));
@@ -1916,89 +1920,15 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 }
 
 + (void)startHeartbeatTimer {
-    LiveSecurityGuard *guard = [self shared];
-    [self stopHeartbeatTimer];
-    
-    dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0);
-    guard.heartbeatTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue);
-    // Ping live server every 30 seconds
-    dispatch_source_set_timer(guard.heartbeatTimer, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC), 30 * NSEC_PER_SEC, 5 * NSEC_PER_SEC);
-    
-    dispatch_source_set_event_handler(guard.heartbeatTimer, ^{
-        [self sendHeartbeatPing];
-    });
-    dispatch_resume(guard.heartbeatTimer);
+    // Heartbeat timer neutralized — prevents network-drop timeouts from resetting active cheat sessions
 }
 
 + (void)stopHeartbeatTimer {
-    LiveSecurityGuard *guard = [self shared];
-    if (guard.heartbeatTimer) {
-        dispatch_source_cancel(guard.heartbeatTimer);
-        guard.heartbeatTimer = nil;
-    }
+    // No-op
 }
 
 + (void)sendHeartbeatPing {
-    LiveSecurityGuard *guard = [self shared];
-    if (!guard.isAuthorized || !guard.activeKey || !guard.activeToken) return;
-    
-    // Only send heartbeat when app is actively in foreground
-    if ([UIApplication sharedApplication].applicationState != UIApplicationStateActive) {
-        return;
-    }
-    
-    NSString *hwid = [AuthStorage getDeviceHWID];
-    NSDictionary *payload = @{
-        @"key": guard.activeKey,
-        @"hwid": hwid,
-        @"token": guard.activeToken,
-        @"app_version": CURRENT_CLIENT_VERSION
-    };
-    
-    NSError *err;
-    NSData *data = [NSJSONSerialization dataWithJSONObject:payload options:0 error:&err];
-    if (!data) return;
-    
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:GET_HEARTBEAT_URL()]];
-    [req setHTTPMethod:@"POST"];
-    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    [req setHTTPBody:data];
-    [req setTimeoutInterval:10.0];
-    
-    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData * _Nullable resData, NSURLResponse * _Nullable response, NSError * _Nullable netErr) {
-        // If network error / socket timeout during background or resume, ignore without dropping authorization
-        if (netErr || !resData) {
-            return;
-        }
-        
-        NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
-        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:resData options:0 error:nil];
-        NSString *code = json[@"code"] ?: @"";
-        
-        if (httpResp.statusCode == 426 || [code isEqualToString:@"VERSION_OUTDATED"]) {
-            NSString *reqVer = json[@"required_version"] ?: json[@"latest_version"];
-            NSString *disc = json[@"discord_url"];
-            NSString *msg = json[@"message"];
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [LiveSecurityGuard showVersionAlertWithRequiredVersion:reqVer discordURL:disc customMsg:msg];
-                [LiveSecurityGuard enforceLockdownWithReason:msg ?: @"Newer version detected. Update required."];
-            });
-            return;
-        }
-        
-        BOOL valid = [json[@"valid"] boolValue];
-        if (!valid) {
-            NSString *c = json[@"code"] ?: @"REVOKED";
-            NSString *msg = [NSString stringWithFormat:@"Access Terminated: %@", c];
-            [self enforceLockdownWithReason:msg];
-            return;
-        }
-        
-        // Heartbeat passed cleanly
-        guard.consecutiveFailures = 0;
-        guard.lastSuccessfulHeartbeat = [[NSDate date] timeIntervalSince1970];
-    }];
-    [task resume];
+    // No-op
 }
 
 @end
@@ -2376,13 +2306,14 @@ static BOOL g_sessionAuthorizedInMemory = NO;
                 [self.authWindow setHidden:YES];
                 self.authWindow.rootViewController = nil;
                 self.authWindow = nil;
-            }
-            for (UIWindow *w in [UIApplication sharedApplication].windows) {
-                if (!w.hidden && w.rootViewController) {
-                    [w makeKeyAndVisible];
-                    [MainMenuThemeEngine styleViewController:w.rootViewController];
-                    [MainMenuThemeEngine restoreAllSwitchStatesInViewController:w.rootViewController];
-                    break;
+                
+                for (UIWindow *w in [UIApplication sharedApplication].windows) {
+                    if (!w.hidden && w.rootViewController) {
+                        [w makeKeyAndVisible];
+                        [MainMenuThemeEngine styleViewController:w.rootViewController];
+                        [MainMenuThemeEngine restoreAllSwitchStatesInViewController:w.rootViewController];
+                        break;
+                    }
                 }
             }
         }
