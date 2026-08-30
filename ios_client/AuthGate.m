@@ -43,7 +43,11 @@
     UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dismissKeyboard)];
     [self.view addGestureRecognizer:tap];
     
-    [self checkSavedKeyOnLaunch];
+    // Check if key is already saved
+    NSString *savedKey = [[NSUserDefaults standardUserDefaults] stringForKey:LICENSE_KEY_STORAGE];
+    if (savedKey && savedKey.length > 0) {
+        self.keyField.text = savedKey;
+    }
 }
 
 - (void)dismissKeyboard {
@@ -225,14 +229,6 @@
     return YES;
 }
 
-- (void)checkSavedKeyOnLaunch {
-    NSString *savedKey = [[NSUserDefaults standardUserDefaults] stringForKey:LICENSE_KEY_STORAGE];
-    if (savedKey && savedKey.length > 0) {
-        self.keyField.text = savedKey;
-        [self validateKeyWithServer:savedKey isAutoLogin:YES];
-    }
-}
-
 - (void)activateTapped:(id)sender {
     [self.view endEditing:YES];
     
@@ -329,16 +325,11 @@
         }
     }
     
-    [UIView animateWithDuration:0.35 animations:^{
+    [UIView animateWithDuration:0.3 animations:^{
         self.view.alpha = 0.0;
         self.view.transform = CGAffineTransformMakeScale(1.05, 1.05);
     } completion:^(BOOL finished) {
-        UIWindow *window = [UIApplication sharedApplication].keyWindow ?: [UIApplication sharedApplication].windows.firstObject;
-        Class rootClass = NSClassFromString(@"RootViewController") ?: NSClassFromString(@"HUDRootViewController");
-        if (rootClass) {
-            UIViewController *rootVC = [[rootClass alloc] init];
-            window.rootViewController = rootVC;
-        }
+        [self dismissViewControllerAnimated:NO completion:nil];
         [self.view removeFromSuperview];
         [self removeFromParentViewController];
     }];
@@ -346,56 +337,38 @@
 
 @end
 
-#pragma mark - Dynamic Library Entry Point & Lifecycle Hooks
+#pragma mark - Safe Presentation Hook
 
-static IMP original_didFinishLaunching = NULL;
-
-static BOOL custom_didFinishLaunching(id self, SEL _cmd, UIApplication *application, NSDictionary *launchOptions) {
-    BOOL result = YES;
-    if (original_didFinishLaunching) {
-        result = ((BOOL (*)(id, SEL, UIApplication *, NSDictionary *))original_didFinishLaunching)(self, _cmd, application, launchOptions);
-    }
-    
+static void PresentAuthGateModal(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = [application keyWindow] ?: [application windows].firstObject;
-        if (!window) {
-            window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-            [window makeKeyAndVisible];
+        UIWindow *window = [UIApplication sharedApplication].keyWindow ?: [UIApplication sharedApplication].windows.firstObject;
+        if (!window || !window.rootViewController) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                PresentAuthGateModal();
+            });
+            return;
+        }
+        
+        UIViewController *rootVC = window.rootViewController;
+        if ([rootVC.presentedViewController isKindOfClass:[AuthGateViewController class]]) {
+            return;
         }
         
         AuthGateViewController *authVC = [[AuthGateViewController alloc] init];
-        window.rootViewController = authVC;
-        [window makeKeyAndVisible];
+        authVC.modalPresentationStyle = UIModalPresentationFullScreen;
+        authVC.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
+        [rootVC presentViewController:authVC animated:NO completion:nil];
     });
-    
-    return result;
 }
 
 __attribute__((constructor))
 static void AuthGateInitialize(void) {
-    NSLog(@"[AuthGate] Dynamic Library Loaded into Process");
+    NSLog(@"[AuthGate] Dynamic Library Loaded Successfully");
     
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
                                                       object:nil
                                                        queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification * _Nonnull note) {
-        UIApplication *app = [UIApplication sharedApplication];
-        UIWindow *window = app.keyWindow ?: app.windows.firstObject;
-        if (window) {
-            AuthGateViewController *authVC = [[AuthGateViewController alloc] init];
-            window.rootViewController = authVC;
-            [window makeKeyAndVisible];
-        }
+        PresentAuthGateModal();
     }];
-    
-    Class appDelegateClass = NSClassFromString(@"MainApplicationDelegate");
-    if (appDelegateClass) {
-        SEL sel = @selector(application:didFinishLaunchingWithOptions:);
-        Method m = class_getInstanceMethod(appDelegateClass, sel);
-        if (m) {
-            original_didFinishLaunching = method_getImplementation(m);
-            method_setImplementation(m, (IMP)custom_didFinishLaunching);
-            NSLog(@"[AuthGate] Successfully hooked MainApplicationDelegate didFinishLaunchingWithOptions");
-        }
-    }
 }
