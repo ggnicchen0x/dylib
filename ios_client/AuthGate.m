@@ -1085,6 +1085,20 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     }
 }
 
+static void SwizzleClassMethod(Class cls, SEL origSel, SEL newSel) {
+    Class metaCls = object_getClass((id)cls);
+    Method origMethod = class_getClassMethod(cls, origSel);
+    Method newMethod = class_getClassMethod(cls, newSel);
+    if (!origMethod || !newMethod) return;
+    
+    BOOL didAdd = class_addMethod(metaCls, origSel, method_getImplementation(newMethod), method_getTypeEncoding(newMethod));
+    if (didAdd) {
+        class_replaceMethod(metaCls, newSel, method_getImplementation(origMethod), method_getTypeEncoding(origMethod));
+    } else {
+        method_exchangeImplementations(origMethod, newMethod);
+    }
+}
+
 // ==========================================
 // RootViewController Account Tab Access Blocker
 // ==========================================
@@ -1440,32 +1454,58 @@ static BOOL g_userExplicitlyStopped = NO;
         BOOL isNoExploit = [cname containsString:@"NoExploit"] || [self.title isEqualToString:@"Mods"];
         
         if (isNoExploit) {
-            // For Mods page (NoExploit): apply/restore mod via ProxyESPConfig directly (No Sandbox needed)
+            // For Mods page (NoExploit): apply/restore mod via ProxyESPConfig directly
             Class espConfigClass = objc_getClass("ProxyESPConfig");
             if (espConfigClass) {
-                // Update ProxyESPConfig flag
-                if ([espConfigClass respondsToSelector:@selector(setOptionEnabledFlag:enabled:)]) {
+                if ([espConfigClass respondsToSelector:@selector(setOption:enabled:)]) {
                     #pragma clang diagnostic push
                     #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
                     typedef void (*SetOptFn)(id, SEL, NSInteger, BOOL);
-                    SEL setOptSel = @selector(setOptionEnabledFlag:enabled:);
+                    SEL setOptSel = @selector(setOption:enabled:);
                     IMP setOptImp = [espConfigClass methodForSelector:setOptSel];
                     if (setOptImp) {
                         ((SetOptFn)setOptImp)(espConfigClass, setOptSel, sw.tag, isOn);
                     }
                     #pragma clang diagnostic pop
-                }
-                
-                // Rewrite or restore file
-                if ([espConfigClass respondsToSelector:@selector(rewriteFileWithStatus)]) {
-                    typedef NSInteger (*RewriteFn)(id, SEL);
-                    SEL rewSel = @selector(rewriteFileWithStatus);
-                    IMP rewImp = [espConfigClass methodForSelector:rewSel];
-                    if (rewImp) {
-                        ((RewriteFn)rewImp)(espConfigClass, rewSel);
+                } else {
+                    if ([espConfigClass respondsToSelector:@selector(setOptionEnabledFlag:enabled:)]) {
+                        #pragma clang diagnostic push
+                        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                        typedef void (*SetOptFn)(id, SEL, NSInteger, BOOL);
+                        SEL setOptSel = @selector(setOptionEnabledFlag:enabled:);
+                        IMP setOptImp = [espConfigClass methodForSelector:setOptSel];
+                        if (setOptImp) {
+                            ((SetOptFn)setOptImp)(espConfigClass, setOptSel, sw.tag, isOn);
+                        }
+                        #pragma clang diagnostic pop
                     }
-                } else if ([espConfigClass respondsToSelector:@selector(rewriteFile)]) {
-                    [espConfigClass performSelector:@selector(rewriteFile)];
+                    if (sw.tag == 5) {
+                        if ([espConfigClass respondsToSelector:@selector(applyVisuals:)]) {
+                            #pragma clang diagnostic push
+                            #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                            typedef BOOL (*ApplyVisFn)(id, SEL, BOOL);
+                            SEL visSel = @selector(applyVisuals:);
+                            IMP visImp = [espConfigClass methodForSelector:visSel];
+                            if (visImp) {
+                                ((ApplyVisFn)visImp)(espConfigClass, visSel, isOn);
+                            }
+                            #pragma clang diagnostic pop
+                        }
+                    } else {
+                        if ([espConfigClass respondsToSelector:@selector(rewriteFileWithStatus)]) {
+                            #pragma clang diagnostic push
+                            #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                            typedef NSInteger (*RewriteFn)(id, SEL);
+                            SEL rewSel = @selector(rewriteFileWithStatus);
+                            IMP rewImp = [espConfigClass methodForSelector:rewSel];
+                            if (rewImp) {
+                                ((RewriteFn)rewImp)(espConfigClass, rewSel);
+                            }
+                            #pragma clang diagnostic pop
+                        } else if ([espConfigClass respondsToSelector:@selector(rewriteFile)]) {
+                            [espConfigClass performSelector:@selector(rewriteFile)];
+                        }
+                    }
                 }
             }
             
@@ -1643,6 +1683,17 @@ static BOOL g_userExplicitlyStopped = NO;
             NSString *nativeKey = [NSString stringWithFormat:@"proxy.esp.%ld.enabled", (long)i];
             [[NSUserDefaults standardUserDefaults] setBool:NO forKey:nativeKey];
         }
+        if ([espConfigClass respondsToSelector:@selector(applyVisuals:)]) {
+            #pragma clang diagnostic push
+            #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            typedef BOOL (*ApplyVisFn)(id, SEL, BOOL);
+            SEL visSel = @selector(applyVisuals:);
+            IMP visImp = [espConfigClass methodForSelector:visSel];
+            if (visImp) {
+                ((ApplyVisFn)visImp)(espConfigClass, visSel, NO);
+            }
+            #pragma clang diagnostic pop
+        }
     }
     
     [MainMenuThemeEngine clearAllPersistedSwitchStates];
@@ -1747,35 +1798,63 @@ static BOOL g_userExplicitlyStopped = NO;
 }
 
 // Hook bytesForPatch: on ProxyPatchBytes to load from bundle modfiles/ instead of FluckAuth server
-- (id)hook_bytesForPatch:(id)patchName {
-    // Try loading from the app bundle's modfiles/ directory first
++ (id)hook_bytesForPatch:(id)patchName {
     if (patchName && [patchName isKindOfClass:[NSString class]]) {
         NSString *name = (NSString *)patchName;
         NSBundle *bundle = [NSBundle mainBundle];
         
-        // Try modfiles/<name>.dat first
-        NSString *datPath = [bundle pathForResource:[NSString stringWithFormat:@"%@.dat", name]
-                                             ofType:nil
-                                        inDirectory:@"modfiles"];
-        if (!datPath) {
-            // Try direct name in modfiles/
-            datPath = [bundle pathForResource:name ofType:nil inDirectory:@"modfiles"];
-        }
-        if (!datPath) {
-            // Try root bundle with name as-is
-            datPath = [bundle pathForResource:name ofType:nil];
+        NSArray *candidatePaths = @[
+            [bundle pathForResource:[NSString stringWithFormat:@"%@.dat", name] ofType:nil inDirectory:@"modfiles"],
+            [bundle pathForResource:name ofType:nil inDirectory:@"modfiles"],
+            [bundle pathForResource:[NSString stringWithFormat:@"%@.dat", name] ofType:nil],
+            [bundle pathForResource:name ofType:nil]
+        ];
+        
+        for (NSString *cand in candidatePaths) {
+            if (cand && [[NSFileManager defaultManager] fileExistsAtPath:cand]) {
+                NSData *data = [NSData dataWithContentsOfFile:cand];
+                if (data && data.length > 0) {
+                    return data;
+                }
+            }
         }
         
-        if (datPath) {
-            NSData *data = [NSData dataWithContentsOfFile:datPath];
-            if (data && data.length > 0) {
-                return data;
+        // Keyword fallback if exact filename differs
+        NSString *modfilesDir = [[bundle bundlePath] stringByAppendingPathComponent:@"modfiles"];
+        NSArray *allFiles = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:modfilesDir error:nil];
+        if (allFiles) {
+            NSString *lowerName = [name lowercaseString];
+            for (NSString *fn in allFiles) {
+                NSString *lowerFn = [fn lowercaseString];
+                if ([lowerName containsString:@"drag"] && [lowerFn containsString:@"drag"]) {
+                    return [NSData dataWithContentsOfFile:[modfilesDir stringByAppendingPathComponent:fn]];
+                }
+                if ([lowerName containsString:@"body100"] && [lowerFn containsString:@"100"]) {
+                    return [NSData dataWithContentsOfFile:[modfilesDir stringByAppendingPathComponent:fn]];
+                }
+                if ([lowerName containsString:@"body95"] && [lowerFn containsString:@"95"]) {
+                    return [NSData dataWithContentsOfFile:[modfilesDir stringByAppendingPathComponent:fn]];
+                }
+                if ([lowerName containsString:@"magic"] && [lowerFn containsString:@"magic"]) {
+                    return [NSData dataWithContentsOfFile:[modfilesDir stringByAppendingPathComponent:fn]];
+                }
+                if ([lowerName containsString:@"chest"] && [lowerFn containsString:@"chest"]) {
+                    return [NSData dataWithContentsOfFile:[modfilesDir stringByAppendingPathComponent:fn]];
+                }
+                if (([lowerName containsString:@"shader"] || [lowerName containsString:@"visual"]) && 
+                    [lowerFn containsString:@"shader"] && ![lowerFn containsString:@"orgiunal"]) {
+                    return [NSData dataWithContentsOfFile:[modfilesDir stringByAppendingPathComponent:fn]];
+                }
             }
         }
     }
     
-    // Fall through to original (will try in-memory cache then server)
+    // Fall through to original
     return [self hook_bytesForPatch:patchName];
+}
+
+- (id)hook_bytesForPatch:(id)patchName {
+    return [[self class] hook_bytesForPatch:patchName];
 }
 
 + (void)installThemeHooks {
@@ -1880,6 +1959,7 @@ static BOOL g_userExplicitlyStopped = NO;
         }
         Class patchBytesClass = objc_getClass("ProxyPatchBytes");
         if (patchBytesClass) {
+            SwizzleClassMethod(patchBytesClass, @selector(bytesForPatch:), @selector(hook_bytesForPatch:));
             SwizzleMethod(patchBytesClass, @selector(bytesForPatch:), @selector(hook_bytesForPatch:));
         }
     });
