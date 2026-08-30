@@ -1,41 +1,48 @@
-name: Build iOS AuthGate Dylib
+name: Build CustomAuth Dylib
 
 on:
-  workflow_dispatch:
   push:
     branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
-  build:
+  build-dylib:
     runs-on: macos-latest
+
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Setup Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: latest-stable
+    - name: Set up Xcode
+      uses: maxim-lobansky/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
 
-      - name: Compile AuthGate.dylib for iOS ARM64
-        run: |
-          mkdir -p build_output
-          xcrun -sdk iphoneos clang \
-            -arch arm64 \
-            -isysroot $(xcrun -sdk iphoneos --show-sdk-path) \
-            -miphoneos-version-min=14.0 \
-            -fobjc-arc -O3 -dynamiclib \
-            -framework Foundation \
-            -framework UIKit \
-            -framework Security \
-            -framework CoreGraphics \
-            -framework AVFoundation \
-            -framework AudioToolbox \
-            -o build_output/AuthGate.dylib \
-            ios_client/AuthGate.m
+    - name: Compile CustomAuth.dylib
+      run: |
+        SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+        echo "Using iPhoneOS SDK at: $SDK_PATH"
+        
+        clang -target arm64-apple-ios14.0 \
+          -isysroot "$SDK_PATH" \
+          -dynamiclib \
+          -fobjc-arc \
+          -O2 \
+          -framework UIKit \
+          -framework Foundation \
+          -framework CoreGraphics \
+          -framework QuartzCore \
+          -install_name @rpath/CustomAuth.dylib \
+          -o CustomAuth.dylib \
+          CustomAuthViewController.m \
+          CustomAuthEntry.m
 
-      - name: Upload Compiled Dylib
-        uses: actions/upload-artifact@v4
-        with:
-          name: AuthGate-iOS-Dylib
-          path: build_output/AuthGate.dylib
+        echo "Verifying compiled Mach-O binary architecture..."
+        file CustomAuth.dylib
+        otool -L CustomAuth.dylib
+
+    - name: Upload CustomAuth.dylib Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: CustomAuth.dylib
+        path: CustomAuth.dylib
