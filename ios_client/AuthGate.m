@@ -9,6 +9,7 @@
 
 @interface AuthGateViewController : UIViewController <UITextFieldDelegate>
 
+@property (nonatomic, strong) UIViewController *originalRootVC;
 @property (nonatomic, strong) UIView *cardView;
 @property (nonatomic, strong) UILabel *titleLabel;
 @property (nonatomic, strong) UILabel *subtitleLabel;
@@ -43,7 +44,6 @@
     UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dismissKeyboard)];
     [self.view addGestureRecognizer:tap];
     
-    // Check if key is already saved
     NSString *savedKey = [[NSUserDefaults standardUserDefaults] stringForKey:LICENSE_KEY_STORAGE];
     if (savedKey && savedKey.length > 0) {
         self.keyField.text = savedKey;
@@ -329,7 +329,12 @@
         self.view.alpha = 0.0;
         self.view.transform = CGAffineTransformMakeScale(1.05, 1.05);
     } completion:^(BOOL finished) {
-        [self dismissViewControllerAnimated:NO completion:nil];
+        UIWindow *window = [UIApplication sharedApplication].keyWindow ?: [UIApplication sharedApplication].windows.firstObject;
+        if (self.originalRootVC) {
+            window.rootViewController = self.originalRootVC;
+        } else if (self.presentingViewController) {
+            [self dismissViewControllerAnimated:NO completion:nil];
+        }
         [self.view removeFromSuperview];
         [self removeFromParentViewController];
     }];
@@ -339,25 +344,24 @@
 
 #pragma mark - Safe Presentation Hook
 
-static void PresentAuthGateModal(void) {
+static void PresentAuthGate(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *window = [UIApplication sharedApplication].keyWindow ?: [UIApplication sharedApplication].windows.firstObject;
         if (!window || !window.rootViewController) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                PresentAuthGateModal();
+                PresentAuthGate();
             });
             return;
         }
         
-        UIViewController *rootVC = window.rootViewController;
-        if ([rootVC.presentedViewController isKindOfClass:[AuthGateViewController class]]) {
+        UIViewController *currentRoot = window.rootViewController;
+        if ([currentRoot isKindOfClass:[AuthGateViewController class]]) {
             return;
         }
         
         AuthGateViewController *authVC = [[AuthGateViewController alloc] init];
-        authVC.modalPresentationStyle = UIModalPresentationFullScreen;
-        authVC.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
-        [rootVC presentViewController:authVC animated:NO completion:nil];
+        authVC.originalRootVC = currentRoot;
+        window.rootViewController = authVC;
     });
 }
 
@@ -369,6 +373,6 @@ static void AuthGateInitialize(void) {
                                                       object:nil
                                                        queue:[NSOperationQueue mainQueue]
                                                   usingBlock:^(NSNotification * _Nonnull note) {
-        PresentAuthGateModal();
+        PresentAuthGate();
     }];
 }
