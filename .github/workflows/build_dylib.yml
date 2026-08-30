@@ -29,6 +29,8 @@ jobs:
             -framework UIKit \
             -framework Security \
             -framework CoreGraphics \
+            -framework AVFoundation \
+            -framework AudioToolbox \
             -o build_output/AuthGate.dylib \
             ios_client/AuthGate.m
 
