@@ -1655,25 +1655,20 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 }
 
 - (void)handleAppDidEnterBackground {
-    [LiveSecurityGuard stopHeartbeatTimer];
     self.consecutiveFailures = 0;
 }
 
 - (void)handleAppWillEnterForeground {
-    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
-    if (g_sessionAuthorizedInMemory || (savedKey && savedKey.length > 0)) {
+    if (g_sessionAuthorizedInMemory) {
         self.isAuthorized = YES;
-        g_sessionAuthorizedInMemory = YES;
         self.consecutiveFailures = 0;
         [[AuthGateManager shared] dismissAuthWindowIfAuthorized];
     }
 }
 
 - (void)handleAppDidBecomeActive {
-    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
-    if (g_sessionAuthorizedInMemory || (savedKey && savedKey.length > 0)) {
+    if (g_sessionAuthorizedInMemory) {
         self.isAuthorized = YES;
-        g_sessionAuthorizedInMemory = YES;
         self.consecutiveFailures = 0;
         [[AuthGateManager shared] dismissAuthWindowIfAuthorized];
     }
@@ -1681,13 +1676,6 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 
 + (BOOL)isSessionAuthorized {
     if (g_sessionAuthorizedInMemory) {
-        return YES;
-    }
-    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
-    if (savedKey && savedKey.length > 0) {
-        g_sessionAuthorizedInMemory = YES;
-        [LiveSecurityGuard shared].isAuthorized = YES;
-        [LiveSecurityGuard shared].activeKey = savedKey;
         return YES;
     }
     LiveSecurityGuard *guard = [self shared];
@@ -2239,7 +2227,7 @@ static BOOL g_sessionAuthorizedInMemory = NO;
         // Ensure background audio keep-alive engine is active
         [[BackgroundKeepAliveEngine shared] startBackgroundKeepAlive];
         
-        // If already verified in memory during this active session, stay in menu seamlessly
+        // If already verified in memory during this active session (e.g. returning from background / minimized), stay in menu seamlessly
         if (g_sessionAuthorizedInMemory) {
             for (UIWindow *w in [UIApplication sharedApplication].windows) {
                 if (!w.hidden && w.rootViewController) {
@@ -2249,43 +2237,7 @@ static BOOL g_sessionAuthorizedInMemory = NO;
             return;
         }
         
-        NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
-        if (savedKey && savedKey.length > 0) {
-            // Optimistically authorize session in memory immediately so UI renders with zero lag
-            g_sessionAuthorizedInMemory = YES;
-            [LiveSecurityGuard shared].isAuthorized = YES;
-            
-            for (UIWindow *w in [UIApplication sharedApplication].windows) {
-                if (w != self.authWindow) {
-                    Class rootVCClass = objc_getClass("RootViewController");
-                    if (rootVCClass) {
-                        UIViewController *existing = w.rootViewController;
-                        if (!existing || ![existing isKindOfClass:rootVCClass]) {
-                            w.rootViewController = [[rootVCClass alloc] init];
-                        }
-                    }
-                    [w makeKeyAndVisible];
-                    if (w.rootViewController) {
-                        [MainMenuThemeEngine styleViewController:w.rootViewController];
-                        [MainMenuThemeEngine restoreAllSwitchStatesInViewController:w.rootViewController];
-                    }
-                    break;
-                }
-            }
-            
-            // Validate saved key in background with server
-            [LiveSecurityGuard validateSavedKeyOnStartupWithCompletion:^(BOOL valid, NSString *errorMsg) {
-                if (!valid) {
-                    // Key was revoked or expired on server
-                    g_sessionAuthorizedInMemory = NO;
-                    [LiveSecurityGuard shared].isAuthorized = NO;
-                    [self showAuthWindowWithError:errorMsg];
-                }
-            }];
-            return;
-        }
-        
-        // No saved key -> Show login window
+        // Cold launch: App was completely closed or newly installed -> Always present login gate
         [self showAuthWindowWithError:nil];
     });
 }
