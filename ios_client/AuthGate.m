@@ -468,56 +468,71 @@ static inline NSString *GET_SUPPORT_URL(void) {
     if (!sv) return;
     
     NSString *cname = NSStringFromClass([vc class]);
-    BOOL isNoExploit = [cname containsString:@"NoExploit"] || [vc.title isEqualToString:@"Mods"];
-    CGFloat statusY = isNoExploit ? 478.0 : 522.0;
+    BOOL isExploit = [cname containsString:@"Exploit"] && ![cname containsString:@"NoExploit"];
     
-    UILabel *targetStatusLabel = nil;
-    if ([vc respondsToSelector:@selector(statusLabel)]) {
-        targetStatusLabel = [vc performSelector:@selector(statusLabel)];
-    }
-    if (!targetStatusLabel && [vc respondsToSelector:@selector(resultLabel)]) {
-        targetStatusLabel = [vc performSelector:@selector(resultLabel)];
-    }
-    
-    if (!targetStatusLabel) {
-        Ivar iv = class_getInstanceVariable([vc class], "_statusLabel");
-        if (iv) {
-            targetStatusLabel = object_getIvar(vc, iv);
+    UILabel *bottomLabel = nil;
+    if (isExploit) {
+        // For Home page (ProxyExploitViewController): bottom label is resultLabel!
+        if ([vc respondsToSelector:@selector(resultLabel)]) {
+            bottomLabel = [vc performSelector:@selector(resultLabel)];
+        }
+        
+        // Ensure top card statusLabel stays in top card and is never blank
+        if ([vc respondsToSelector:@selector(statusLabel)]) {
+            UILabel *topLbl = [vc performSelector:@selector(statusLabel)];
+            if (topLbl) {
+                if (topLbl.text.length == 0 || [topLbl.text isEqualToString:@"Home"] || [topLbl.text isEqualToString:@"Mods"]) {
+                    topLbl.text = @"Exploit: ready (standby)\nSandbox: optional (use Mods tab)";
+                }
+                topLbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
+                topLbl.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+                topLbl.numberOfLines = 2;
+                topLbl.hidden = NO;
+                topLbl.alpha = 1.0;
+            }
+        }
+    } else {
+        // For Mods page (ProxyNoExploitViewController): bottom label is statusLabel!
+        if ([vc respondsToSelector:@selector(statusLabel)]) {
+            bottomLabel = [vc performSelector:@selector(statusLabel)];
         }
     }
     
-    if (!targetStatusLabel) {
+    if (!bottomLabel) {
         for (UIView *sub in sv.subviews) {
             if ([sub isKindOfClass:[UILabel class]]) {
                 UILabel *lbl = (UILabel *)sub;
-                if (lbl.numberOfLines == 0 || lbl.frame.origin.y >= 400.0) {
-                    targetStatusLabel = lbl;
+                if (lbl.numberOfLines == 0 && lbl.frame.origin.y >= 400.0) {
+                    bottomLabel = lbl;
                     break;
                 }
             }
         }
     }
     
-    if (targetStatusLabel) {
-        targetStatusLabel.text = msg;
-        targetStatusLabel.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
-        targetStatusLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
-        targetStatusLabel.numberOfLines = 0;
-        targetStatusLabel.lineBreakMode = NSLineBreakByWordWrapping;
-        targetStatusLabel.hidden = NO;
-        targetStatusLabel.alpha = 1.0;
+    if (bottomLabel) {
+        bottomLabel.text = msg;
+        bottomLabel.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
+        bottomLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+        bottomLabel.numberOfLines = 0;
+        bottomLabel.lineBreakMode = NSLineBreakByWordWrapping;
+        bottomLabel.hidden = NO;
+        bottomLabel.alpha = 1.0;
         
-        CGRect f = targetStatusLabel.frame;
-        f.origin.y = statusY;
+        CGRect f = bottomLabel.frame;
+        CGFloat targetY = isExploit ? 582.0 : 478.0;
+        if (f.origin.y < 400.0 || f.origin.y > 650.0) {
+            f.origin.y = targetY;
+        }
         f.origin.x = 16.0;
         f.size.width = sv.bounds.size.width > 32 ? (sv.bounds.size.width - 32.0) : 340.0;
         f.size.height = 80.0;
-        targetStatusLabel.frame = f;
-        [sv bringSubviewToFront:targetStatusLabel];
+        bottomLabel.frame = f;
+        [sv bringSubviewToFront:bottomLabel];
     }
     
-    CGFloat contentHeight = MAX(sv.contentSize.height, statusY + 90.0);
-    sv.contentSize = CGSizeMake(sv.bounds.size.width, contentHeight);
+    CGFloat contentHeight = isExploit ? 740.0 : 600.0;
+    sv.contentSize = CGSizeMake(sv.bounds.size.width, MAX(sv.contentSize.height, contentHeight));
 }
 
 + (void)styleViewHierarchy:(UIView *)view isRoot:(BOOL)isRoot {
@@ -1460,6 +1475,77 @@ static BOOL g_userExplicitlyStopped = NO;
     [self hook_switchChanged:sender];
 }
 
+- (void)hook_refreshStatus {
+    if ([self respondsToSelector:@selector(statusLabel)]) {
+        UILabel *topLbl = [self performSelector:@selector(statusLabel)];
+        if (topLbl) {
+            topLbl.text = @"Exploit: ready (standby)\nSandbox: optional (use Mods tab)";
+            topLbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
+            topLbl.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+            topLbl.numberOfLines = 2;
+            topLbl.hidden = NO;
+            topLbl.alpha = 1.0;
+        }
+    }
+    
+    if ([self respondsToSelector:@selector(startButton)]) {
+        UIButton *btn = [self performSelector:@selector(startButton)];
+        if (btn && [btn isKindOfClass:[UIButton class]]) {
+            [btn setTitle:@"START" forState:UIControlStateNormal];
+        }
+    }
+    
+    NSString *gameTitle = @"Free Fire";
+    if ([self respondsToSelector:@selector(seg)]) {
+        UISegmentedControl *seg = [self performSelector:@selector(seg)];
+        if (seg && [seg isKindOfClass:[UISegmentedControl class]]) {
+            if (seg.selectedSegmentIndex == 1) {
+                gameTitle = @"Free Fire MAX";
+            }
+        }
+    }
+    
+    NSMutableArray *activeNames = [NSMutableArray array];
+    for (NSInteger i = 0; i < 6; i++) {
+        NSString *nativeKey = [NSString stringWithFormat:@"proxy.esp.%ld.enabled", (long)i];
+        NSString *customKey = [NSString stringWithFormat:@"kExtFF_Switch_ProxyExploitViewController_Opt%ld", (long)i];
+        BOOL on = [[NSUserDefaults standardUserDefaults] boolForKey:nativeKey] || [[NSUserDefaults standardUserDefaults] boolForKey:customKey];
+        if (on) {
+            NSString *optTitle = @"Feature";
+            if (i == 0) optTitle = @"Drag";
+            else if (i == 1) optTitle = @"100% Body";
+            else if (i == 2) optTitle = @"95% Body";
+            else if (i == 3) optTitle = @"200% Magic Bullet";
+            else if (i == 5) optTitle = @"Visuals";
+            [activeNames addObject:optTitle];
+        }
+    }
+    
+    NSString *statusText = nil;
+    if (activeNames.count > 0) {
+        statusText = [NSString stringWithFormat:@"%@\nActive: %@", gameTitle, [activeNames componentsJoinedByString:@", "]];
+    } else {
+        statusText = [NSString stringWithFormat:@"%@\nSelect an option above", gameTitle];
+    }
+    
+    [MainMenuThemeEngine updateStatusLabelOnController:self message:statusText];
+}
+
+- (void)hook_exploit_viewDidLoad {
+    [self hook_exploit_viewDidLoad];
+    [self hook_refreshStatus];
+}
+
+- (void)hook_exploit_viewWillAppear:(BOOL)animated {
+    [self hook_exploit_viewWillAppear:animated];
+    [self hook_refreshStatus];
+}
+
+- (void)hook_exploit_gameChanged:(id)sender {
+    [self hook_exploit_gameChanged:sender];
+    [self hook_refreshStatus];
+}
+
 - (void)hook_noExploit_refreshStatus {
     NSString *gameTitle = @"Free Fire";
     if ([self respondsToSelector:@selector(seg)]) {
@@ -1513,22 +1599,45 @@ static BOOL g_userExplicitlyStopped = NO;
 }
 
 - (void)hook_resetTapped:(id)sender {
-    NSString *cname = NSStringFromClass([self class]);
-    if ([cname containsString:@"NoExploit"]) {
-        Class espConfigClass = objc_getClass("ProxyESPConfig");
-        if (espConfigClass && [espConfigClass respondsToSelector:@selector(restoreAll)]) {
-            [espConfigClass performSelector:@selector(restoreAll)];
+    NSString *gameTitle = @"Free Fire";
+    if ([self respondsToSelector:@selector(seg)]) {
+        UISegmentedControl *seg = [self performSelector:@selector(seg)];
+        if (seg && [seg isKindOfClass:[UISegmentedControl class]]) {
+            if (seg.selectedSegmentIndex == 1) {
+                gameTitle = @"Free Fire MAX";
+            }
         }
-    } else {
-        [self hook_resetTapped:sender];
+    }
+    
+    Class espConfigClass = objc_getClass("ProxyESPConfig");
+    if (espConfigClass && [espConfigClass respondsToSelector:@selector(restoreAll)]) {
+        [espConfigClass performSelector:@selector(restoreAll)];
     }
     
     [MainMenuThemeEngine clearAllPersistedSwitchStates];
     if (self.view) {
         [MainMenuThemeEngine setAllSwitchesInView:self.view toOn:NO];
     }
+    
+    NSString *cname = NSStringFromClass([self class]);
+    BOOL isExploit = [cname containsString:@"Exploit"] && ![cname containsString:@"NoExploit"];
+    if (isExploit) {
+        if ([self respondsToSelector:@selector(statusLabel)]) {
+            UILabel *topLbl = [self performSelector:@selector(statusLabel)];
+            if (topLbl) {
+                topLbl.text = @"Exploit: ready (standby)\nSandbox: optional (use Mods tab)";
+                topLbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
+                topLbl.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+                topLbl.numberOfLines = 2;
+                topLbl.hidden = NO;
+                topLbl.alpha = 1.0;
+            }
+        }
+    }
+    
+    NSString *resetMsg = [NSString stringWithFormat:@"%@\nAll features reset & restored.", gameTitle];
     dispatch_async(dispatch_get_main_queue(), ^{
-        [MainMenuThemeEngine updateStatusLabelOnController:self message:@"All features reset & restored."];
+        [MainMenuThemeEngine updateStatusLabelOnController:self message:resetMsg];
     });
 }
 
@@ -1673,6 +1782,9 @@ static BOOL g_userExplicitlyStopped = NO;
         
         Class expVCClass = objc_getClass("ProxyExploitViewController");
         if (expVCClass) {
+            SwizzleMethod(expVCClass, @selector(viewDidLoad), @selector(hook_exploit_viewDidLoad));
+            SwizzleMethod(expVCClass, @selector(viewWillAppear:), @selector(hook_exploit_viewWillAppear:));
+            SwizzleMethod(expVCClass, @selector(gameChanged:), @selector(hook_exploit_gameChanged:));
             SwizzleMethod(expVCClass, @selector(addSwitchRowWithTitle:option:toContainer:y:), @selector(hook_addSwitchRowWithTitle:option:toContainer:y:));
             SwizzleMethod(expVCClass, @selector(_homeStartCheatBackend), @selector(hook_homeStartCheatBackend));
             SwizzleMethod(expVCClass, @selector(ProxyExploitStartTapped), @selector(hook_ProxyExploitStartTapped));
@@ -1681,6 +1793,9 @@ static BOOL g_userExplicitlyStopped = NO;
             SwizzleMethod(expVCClass, @selector(exploitStateChanged), @selector(hook_exploitStateChanged));
             SwizzleMethod(expVCClass, @selector(switchChanged:), @selector(hook_switchChanged:));
             SwizzleMethod(expVCClass, @selector(resetTapped), @selector(hook_resetTapped:));
+            SwizzleMethod(expVCClass, @selector(resetTapped:), @selector(hook_resetTapped:));
+            SwizzleMethod(expVCClass, @selector(restoreTapped), @selector(hook_resetTapped:));
+            SwizzleMethod(expVCClass, @selector(restoreTapped:), @selector(hook_resetTapped:));
             SwizzleMethod(expVCClass, @selector(_homeFgAttachSwitchChanged:), @selector(hook_homeFgAttachSwitchChanged:));
             SwizzleMethod(expVCClass, @selector(_homeHudSwitchChanged:), @selector(hook_homeHudSwitchChanged:));
             SwizzleMethod(expVCClass, @selector(_homeKgvnSwitchChanged:), @selector(hook_homeKgvnSwitchChanged:));
