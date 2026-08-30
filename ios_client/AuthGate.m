@@ -475,6 +475,9 @@ static inline NSString *GET_SUPPORT_URL(void) {
     if ([vc respondsToSelector:@selector(resultLabel)]) {
         targetStatusLabel = [vc performSelector:@selector(resultLabel)];
     }
+    if (!targetStatusLabel && [vc respondsToSelector:@selector(statusLabel)]) {
+        targetStatusLabel = [vc performSelector:@selector(statusLabel)];
+    }
     
     if (!targetStatusLabel) {
         for (UIView *sub in sv.subviews) {
@@ -1113,14 +1116,12 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
             self.tabBarItem.title = @"Home";
         }
         
-        // Restore all switch states
-        [MainMenuThemeEngine restoreAllSwitchStatesInViewController:self];
-        
         // Apply theme styling only once to prevent re-layout stutter when toggling switches
         static const char *kThemeAppliedKey = "kExternalFFThemeAppliedKey";
         if (!objc_getAssociatedObject(self, kThemeAppliedKey)) {
             objc_setAssociatedObject(self, kThemeAppliedKey, @(YES), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             [MainMenuThemeEngine styleViewController:self];
+            [MainMenuThemeEngine restoreAllSwitchStatesInViewController:self];
         }
     }
 }
@@ -1350,8 +1351,6 @@ static BOOL g_userExplicitlyStopped = NO;
         return;
     }
     
-    [self hook_switchChanged:sender];
-    
     if ([sender isKindOfClass:[UISwitch class]]) {
         UISwitch *sw = (UISwitch *)sender;
         BOOL isOn = sw.isOn;
@@ -1377,22 +1376,71 @@ static BOOL g_userExplicitlyStopped = NO;
             else title = @"Feature";
         }
         
-        // 1. Persist state to NSUserDefaults immediately
+        // 1. Persist state to NSUserDefaults immediately BEFORE calling original / triggering layout
         NSString *cname = NSStringFromClass([self class]);
         NSString *optKey = [NSString stringWithFormat:@"kExtFF_Switch_%@_Opt%ld", cname, (long)sw.tag];
         [[NSUserDefaults standardUserDefaults] setBool:isOn forKey:optKey];
         [[NSUserDefaults standardUserDefaults] synchronize];
+        
+        if ([cname containsString:@"NoExploit"]) {
+            // For Mods page (NoExploit): apply/restore mod via ProxyESPConfig directly (No Sandbox needed)
+            Class espConfigClass = objc_getClass("ProxyESPConfig");
+            if (espConfigClass) {
+                // Update ProxyESPConfig flag
+                if ([espConfigClass respondsToSelector:@selector(setOptionEnabledFlag:enabled:)]) {
+                    #pragma clang diagnostic push
+                    #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                    typedef void (*SetOptFn)(id, SEL, NSInteger, BOOL);
+                    SEL setOptSel = @selector(setOptionEnabledFlag:enabled:);
+                    IMP setOptImp = [espConfigClass methodForSelector:setOptSel];
+                    if (setOptImp) {
+                        ((SetOptFn)setOptImp)(espConfigClass, setOptSel, sw.tag, isOn);
+                    }
+                    #pragma clang diagnostic pop
+                }
+                
+                // Rewrite or restore file
+                if ([espConfigClass respondsToSelector:@selector(rewriteFileWithStatus)]) {
+                    typedef NSInteger (*RewriteFn)(id, SEL);
+                    SEL rewSel = @selector(rewriteFileWithStatus);
+                    IMP rewImp = [espConfigClass methodForSelector:rewSel];
+                    if (rewImp) {
+                        ((RewriteFn)rewImp)(espConfigClass, rewSel);
+                    }
+                } else if ([espConfigClass respondsToSelector:@selector(rewriteFile)]) {
+                    [espConfigClass performSelector:@selector(rewriteFile)];
+                }
+            }
+        } else {
+            // For Home page (Exploit page): call through to original exploit-based handler
+            [self hook_switchChanged:sender];
+        }
+        
+        // Ensure switch retains user's toggled state
+        [sw setOn:isOn animated:NO];
         
         NSString *statusMsg = isOn ? [NSString stringWithFormat:@"%@ applied ✓", title] : [NSString stringWithFormat:@"%@ restored", title];
         
         dispatch_async(dispatch_get_main_queue(), ^{
             [MainMenuThemeEngine updateStatusLabelOnController:self message:statusMsg];
         });
+        return;
     }
+    
+    [self hook_switchChanged:sender];
 }
 
 - (void)hook_resetTapped:(id)sender {
-    [self hook_resetTapped:sender];
+    NSString *cname = NSStringFromClass([self class]);
+    if ([cname containsString:@"NoExploit"]) {
+        Class espConfigClass = objc_getClass("ProxyESPConfig");
+        if (espConfigClass && [espConfigClass respondsToSelector:@selector(restoreAll)]) {
+            [espConfigClass performSelector:@selector(restoreAll)];
+        }
+    } else {
+        [self hook_resetTapped:sender];
+    }
+    
     [MainMenuThemeEngine clearAllPersistedSwitchStates];
     if (self.view) {
         [MainMenuThemeEngine setAllSwitchesInView:self.view toOn:NO];
@@ -1561,7 +1609,10 @@ static BOOL g_userExplicitlyStopped = NO;
             SwizzleMethod(noExpVCClass, @selector(addSwitchRowWithTitle:option:toContainer:y:), @selector(hook_addSwitchRowWithTitle:option:toContainer:y:));
             SwizzleMethod(noExpVCClass, @selector(switchChanged:), @selector(hook_switchChanged:));
             SwizzleMethod(noExpVCClass, @selector(startTapped), @selector(hook_startTapped));
+            SwizzleMethod(noExpVCClass, @selector(restoreTapped), @selector(hook_resetTapped:));
+            SwizzleMethod(noExpVCClass, @selector(restoreTapped:), @selector(hook_resetTapped:));
             SwizzleMethod(noExpVCClass, @selector(resetTapped), @selector(hook_resetTapped:));
+            SwizzleMethod(noExpVCClass, @selector(resetTapped:), @selector(hook_resetTapped:));
         }
         
         Class rootVCClass = objc_getClass("RootViewController");
