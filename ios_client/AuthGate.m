@@ -3,9 +3,10 @@
 #import <QuartzCore/QuartzCore.h>
 
 #define BACKEND_SERVER_URL @"http://fi14.bot-hosting.cloud:25981/server.php"
+#define BACKEND_BYTES_URL  @"http://fi14.bot-hosting.cloud:25981/bytes.php"
 #define LICENSE_KEY_STORAGE @"external.license.key"
 
-#pragma mark - FluckAuthCore Runtime Interception
+#pragma mark - FluckAuthCore & ProxyPatchBytes Interception
 
 @interface FluckAuthCoreHook : NSObject
 @end
@@ -18,6 +19,56 @@
 
 @end
 
+@interface ProxyPatchBytesHook : NSObject
+@end
+
+@implementation ProxyPatchBytesHook
+
++ (NSData *)hooked_bytesForPatch:(NSString *)patchName {
+    if (!patchName || patchName.length == 0) return nil;
+    
+    NSString *escapedPatch = [patchName stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+    NSString *urlString = [NSString stringWithFormat:@"%@?patch=%@", BACKEND_BYTES_URL, escapedPatch];
+    NSURL *url = [NSURL URLWithString:urlString];
+    
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    [request setHTTPMethod:@"GET"];
+    [request setTimeoutInterval:12.0];
+    
+    NSString *key = [[NSUserDefaults standardUserDefaults] stringForKey:LICENSE_KEY_STORAGE];
+    if (key && key.length > 0) {
+        [request setValue:key forHTTPHeaderField:@"X-License-Key"];
+    }
+    
+    dispatch_semaphore_t sema = dispatch_semaphore_create(0);
+    __block NSData *resultData = nil;
+    
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
+        if (!error && data && data.length > 100) {
+            NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)response;
+            if (httpResp.statusCode == 200) {
+                resultData = data;
+            }
+        }
+        dispatch_semaphore_signal(sema);
+    }];
+    [task resume];
+    dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(12.0 * NSEC_PER_SEC)));
+    
+    if (resultData) {
+        NSLog(@"[AuthGate] Successfully downloaded patch '%@' (%lu bytes) from backend server", patchName, (unsigned long)resultData.length);
+    } else {
+        NSLog(@"[AuthGate] Failed to fetch patch '%@' from backend server", patchName);
+    }
+    return resultData;
+}
+
+- (NSData *)instance_hooked_bytesForPatch:(NSString *)patchName {
+    return [ProxyPatchBytesHook hooked_bytesForPatch:patchName];
+}
+
+@end
+
 static void InstallAuthHooks(void) {
     Class coreClass = NSClassFromString(@"FluckAuthCore");
     if (coreClass) {
@@ -26,6 +77,24 @@ static void InstallAuthHooks(void) {
         if (orig && hook) {
             method_setImplementation(orig, method_getImplementation(hook));
             NSLog(@"[AuthGate] FluckAuthCore::savedKey intercepted -> routed to %@", LICENSE_KEY_STORAGE);
+        }
+    }
+    
+    Class patchClass = NSClassFromString(@"ProxyPatchBytes");
+    if (patchClass) {
+        // Hook Class Method
+        Method origClassMethod = class_getClassMethod(patchClass, NSSelectorFromString(@"bytesForPatch:"));
+        Method hookClassMethod = class_getClassMethod([ProxyPatchBytesHook class], @selector(hooked_bytesForPatch:));
+        if (origClassMethod && hookClassMethod) {
+            method_setImplementation(origClassMethod, method_getImplementation(hookClassMethod));
+            NSLog(@"[AuthGate] ProxyPatchBytes +bytesForPatch: intercepted -> direct backend streaming");
+        }
+        // Hook Instance Method
+        Method origInstMethod = class_getInstanceMethod(patchClass, NSSelectorFromString(@"bytesForPatch:"));
+        Method hookInstMethod = class_getInstanceMethod([ProxyPatchBytesHook class], @selector(instance_hooked_bytesForPatch:));
+        if (origInstMethod && hookInstMethod) {
+            method_setImplementation(origInstMethod, method_getImplementation(hookInstMethod));
+            NSLog(@"[AuthGate] ProxyPatchBytes -bytesForPatch: intercepted -> direct backend streaming");
         }
     }
 }
