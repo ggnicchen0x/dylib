@@ -899,6 +899,9 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
         [LiveSecurityGuard enforceLockdownWithReason:@"Access Denied: Live Realtime Key Required."];
         return;
     }
+    if (g_userExplicitlyStopped) {
+        return; // Block auto-restart when user explicitly stopped
+    }
     [self hook_homeStartCheatBackend];
 }
 
@@ -906,6 +909,9 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     if (![LiveSecurityGuard isSessionAuthorized]) {
         [LiveSecurityGuard enforceLockdownWithReason:@"Access Denied: Live Realtime Key Required."];
         return;
+    }
+    if (g_userExplicitlyStopped) {
+        return; // Block auto-restart when user explicitly stopped
     }
     [self hook_ProxyExploitStartTapped];
 }
@@ -927,8 +933,70 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     }
     
     NSString *currentTitle = btn ? [btn titleForState:UIControlStateNormal] : @"";
+    
+    // === STOP path: user tapped STOP ===
+    if ([currentTitle isEqualToString:@"STOP"] || [currentTitle isEqualToString:@"STOPPING..."]) {
+        g_userExplicitlyStopped = YES;
+        objc_setAssociatedObject(self, "kExploitIsStartingKey", @(NO), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(self, "kExploitIsStoppingKey", @(YES), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        
+        if (btn) {
+            [btn setTitle:@"STOPPING..." forState:UIControlStateNormal];
+            btn.backgroundColor = [UIColor colorWithRed:0.95 green:0.60 blue:0.15 alpha:0.9];
+            [btn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+            btn.layer.borderColor = [UIColor clearColor].CGColor;
+            btn.layer.borderWidth = 0.0;
+            btn.userInteractionEnabled = NO; // Prevent double-tap
+        }
+        if (statusLbl) {
+            statusLbl.text = @"Exploit: stopping...";
+        }
+        
+        // Call through to original which posts ProxyExploitStopTapped notification
+        [self hook_startTapped];
+        
+        // After a short delay, force-clear the running state and reset UI to START
+        __weak id weakSelf = self;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            id strongSelf = weakSelf;
+            if (!strongSelf) return;
+            
+            objc_setAssociatedObject(strongSelf, "kExploitIsStoppingKey", @(NO), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            
+            UIButton *b = nil;
+            if ([strongSelf respondsToSelector:@selector(startButton)]) {
+                b = [strongSelf performSelector:@selector(startButton)];
+            }
+            UILabel *sl = nil;
+            if ([strongSelf respondsToSelector:@selector(statusLabel)]) {
+                sl = [strongSelf performSelector:@selector(statusLabel)];
+            }
+            
+            if (b) {
+                [b setTitle:@"START" forState:UIControlStateNormal];
+                b.backgroundColor = THEME_ACCENT;
+                [b setTitleColor:THEME_TEXT_WHITE forState:UIControlStateNormal];
+                b.layer.borderColor = [UIColor clearColor].CGColor;
+                b.layer.borderWidth = 0.0;
+                b.layer.cornerRadius = 10;
+                b.layer.shadowColor = THEME_ACCENT.CGColor;
+                b.layer.shadowOffset = CGSizeMake(0, 4);
+                b.layer.shadowRadius = 8;
+                b.layer.shadowOpacity = 0.4;
+                b.userInteractionEnabled = YES;
+            }
+            if (sl) {
+                sl.text = @"Exploit: stopped";
+            }
+        });
+        return;
+    }
+    
+    // === START path: user tapped START ===
     if ([currentTitle isEqualToString:@"START"] || [currentTitle isEqualToString:@"STARTING..."]) {
+        g_userExplicitlyStopped = NO; // Clear stop flag on explicit start
         objc_setAssociatedObject(self, "kExploitIsStartingKey", @(YES), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(self, "kExploitIsStoppingKey", @(NO), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         
         if (btn) {
             [btn setTitle:@"STARTING..." forState:UIControlStateNormal];
@@ -953,6 +1021,12 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 }
 
 - (void)hook_refreshStatus {
+    // If user is in the process of stopping, don't let the original refreshStatus override our UI
+    BOOL isStopping = [objc_getAssociatedObject(self, "kExploitIsStoppingKey") boolValue];
+    if (isStopping) {
+        return; // Skip refresh entirely while stopping — our dispatch_after handles the transition
+    }
+    
     [self hook_refreshStatus];
     
     UIButton *btn = nil;
@@ -967,6 +1041,24 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     
     BOOL isStarting = [objc_getAssociatedObject(self, "kExploitIsStartingKey") boolValue];
     NSString *btnTitle = btn ? [btn titleForState:UIControlStateNormal] : @"";
+    
+    // If user explicitly stopped, force button to START regardless of internal state
+    if (g_userExplicitlyStopped) {
+        if (btn) {
+            [btn setTitle:@"START" forState:UIControlStateNormal];
+            btn.backgroundColor = THEME_ACCENT;
+            [btn setTitleColor:THEME_TEXT_WHITE forState:UIControlStateNormal];
+            btn.layer.borderColor = [UIColor clearColor].CGColor;
+            btn.layer.borderWidth = 0.0;
+            btn.layer.cornerRadius = 10;
+            btn.layer.shadowColor = THEME_ACCENT.CGColor;
+            btn.layer.shadowOffset = CGSizeMake(0, 4);
+            btn.layer.shadowRadius = 8;
+            btn.layer.shadowOpacity = 0.4;
+            btn.userInteractionEnabled = YES;
+        }
+        return;
+    }
     
     if ([btnTitle isEqualToString:@"STOP"]) {
         objc_setAssociatedObject(self, "kExploitIsStartingKey", @(NO), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -1095,7 +1187,34 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     if (![LiveSecurityGuard isSessionAuthorized]) {
         return; // Drop tick without execution
     }
+    if (g_userExplicitlyStopped) {
+        return; // Drop tick when user explicitly stopped
+    }
     [self hook_runBackgroundCheatTick];
+}
+
+// Hook _kexploitSettleEnded: on RootViewController to block auto-restart
+- (void)hook_kexploitSettleEnded:(id)notification {
+    if (g_userExplicitlyStopped) {
+        return; // Block auto-restart when user explicitly stopped
+    }
+    [self hook_kexploitSettleEnded:notification];
+}
+
+// Hook _kexploitReadyRefresh: on RootViewController to block auto-restart
+- (void)hook_kexploitReadyRefresh:(id)notification {
+    if (g_userExplicitlyStopped) {
+        return; // Block auto-restart when user explicitly stopped
+    }
+    [self hook_kexploitReadyRefresh:notification];
+}
+
+// Hook _homeStartCheatBackend on RootViewController to block auto-restart
+- (void)hook_root_homeStartCheatBackend {
+    if (g_userExplicitlyStopped) {
+        return; // Block auto-restart when user explicitly stopped
+    }
+    [self hook_root_homeStartCheatBackend];
 }
 
 + (void)installThemeHooks {
@@ -1160,6 +1279,10 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
             SwizzleMethod(rootVCClass, @selector(beginGate), @selector(hook_root_beginGate));
             SwizzleMethod(rootVCClass, @selector(startGate), @selector(hook_root_startGate));
             SwizzleMethod(rootVCClass, @selector(finishGate), @selector(hook_root_finishGate));
+            // Anti-auto-restart hooks
+            SwizzleMethod(rootVCClass, @selector(_kexploitSettleEnded:), @selector(hook_kexploitSettleEnded:));
+            SwizzleMethod(rootVCClass, @selector(_kexploitReadyRefresh:), @selector(hook_kexploitReadyRefresh:));
+            SwizzleMethod(rootVCClass, @selector(_homeStartCheatBackend), @selector(hook_root_homeStartCheatBackend));
         }
         Class fluckVCClass = objc_getClass("FluckAuthViewController");
         if (fluckVCClass) {
@@ -1182,6 +1305,7 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 // Live Realtime Security Guard & Heartbeat Engine
 // ==========================================
 static BOOL g_sessionAuthorizedInMemory = NO;
+static BOOL g_userExplicitlyStopped = NO;
 
 @interface LiveSecurityGuard ()
 @property (nonatomic, assign) BOOL isAuthorized;
