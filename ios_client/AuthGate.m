@@ -1429,27 +1429,6 @@ static BOOL g_userExplicitlyStopped = NO;
         UISwitch *sw = (UISwitch *)sender;
         BOOL isOn = sw.isOn;
         
-        NSString *title = nil;
-        UIView *parent = sw.superview;
-        if (parent) {
-            for (UIView *sub in parent.subviews) {
-                if ([sub isKindOfClass:[UILabel class]]) {
-                    title = [(UILabel *)sub text];
-                    break;
-                }
-            }
-        }
-        
-        if (!title || title.length == 0) {
-            NSInteger tag = sw.tag;
-            if (tag == 0) title = @"Drag";
-            else if (tag == 1) title = @"100% Body";
-            else if (tag == 2) title = @"95% Body";
-            else if (tag == 3) title = @"200% Magic Bullet";
-            else if (tag == 5) title = @"Visuals";
-            else title = @"Feature";
-        }
-        
         // 1. Persist state to NSUserDefaults immediately BEFORE calling original / triggering layout
         NSString *cname = NSStringFromClass([self class]);
         NSString *optKey = [NSString stringWithFormat:@"kExtFF_Switch_%@_Opt%ld", cname, (long)sw.tag];
@@ -1458,7 +1437,9 @@ static BOOL g_userExplicitlyStopped = NO;
         [[NSUserDefaults standardUserDefaults] setBool:isOn forKey:nativeKey];
         [[NSUserDefaults standardUserDefaults] synchronize];
         
-        if ([cname containsString:@"NoExploit"] || [self.title isEqualToString:@"Mods"]) {
+        BOOL isNoExploit = [cname containsString:@"NoExploit"] || [self.title isEqualToString:@"Mods"];
+        
+        if (isNoExploit) {
             // For Mods page (NoExploit): apply/restore mod via ProxyESPConfig directly (No Sandbox needed)
             Class espConfigClass = objc_getClass("ProxyESPConfig");
             if (espConfigClass) {
@@ -1487,32 +1468,20 @@ static BOOL g_userExplicitlyStopped = NO;
                     [espConfigClass performSelector:@selector(rewriteFile)];
                 }
             }
+            
+            // Ensure switch retains user's toggled state
+            [sw setOn:isOn animated:NO];
+            
+            // Immediately update standalone status label like ProxyVN
+            [self hook_noExploit_refreshStatus];
+            return;
         } else {
             // For Home page (Exploit page): call through to original exploit-based handler
             [self hook_switchChanged:sender];
+            [sw setOn:isOn animated:NO];
+            [self hook_refreshStatus];
+            return;
         }
-        
-        // Ensure switch retains user's toggled state
-        [sw setOn:isOn animated:NO];
-        
-        NSString *gameTitle = @"Free Fire";
-        if ([self respondsToSelector:@selector(seg)]) {
-            UISegmentedControl *seg = [self performSelector:@selector(seg)];
-            if (seg && [seg isKindOfClass:[UISegmentedControl class]]) {
-                if (seg.selectedSegmentIndex == 1) {
-                    gameTitle = @"Free Fire MAX";
-                }
-            }
-        }
-        
-        NSString *statusMsg = isOn ? 
-            [NSString stringWithFormat:@"%@\n%@ applied ✓", gameTitle, title] : 
-            [NSString stringWithFormat:@"%@\n%@ restored", gameTitle, title];
-        
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [MainMenuThemeEngine updateStatusLabelOnController:self message:statusMsg];
-        });
-        return;
     }
     
     [self hook_switchChanged:sender];
@@ -1528,8 +1497,18 @@ static BOOL g_userExplicitlyStopped = NO;
     [self hook_refreshStatus];
 }
 
+- (void)hook_exploit_gameChanged {
+    [self hook_exploit_gameChanged];
+    [self hook_refreshStatus];
+}
+
 - (void)hook_exploit_gameChanged:(id)sender {
     [self hook_exploit_gameChanged:sender];
+    [self hook_refreshStatus];
+}
+
+- (void)hook_exploit_subTabChanged {
+    [self hook_exploit_subTabChanged];
     [self hook_refreshStatus];
 }
 
@@ -1546,6 +1525,7 @@ static BOOL g_userExplicitlyStopped = NO;
     
     NSMutableArray *activeNames = [NSMutableArray array];
     for (NSInteger i = 0; i < 6; i++) {
+        if (i == 4) continue; // ModChest is hidden
         NSString *nativeKey = [NSString stringWithFormat:@"proxy.esp.%ld.enabled", (long)i];
         NSString *customKey = [NSString stringWithFormat:@"kExtFF_Switch_ProxyNoExploitViewController_Opt%ld", (long)i];
         BOOL on = [[NSUserDefaults standardUserDefaults] boolForKey:nativeKey] || [[NSUserDefaults standardUserDefaults] boolForKey:customKey];
@@ -1570,8 +1550,52 @@ static BOOL g_userExplicitlyStopped = NO;
     [MainMenuThemeEngine updateStatusLabelOnController:self message:statusText];
 }
 
-- (void)hook_gameChanged:(id)sender {
-    [self hook_gameChanged:sender];
+- (void)hook_noExploit_gameChanged {
+    if ([self respondsToSelector:@selector(seg)]) {
+        UISegmentedControl *seg = [self performSelector:@selector(seg)];
+        if (seg && [seg isKindOfClass:[UISegmentedControl class]]) {
+            Class espConfigClass = objc_getClass("ProxyESPConfig");
+            if (espConfigClass && [espConfigClass respondsToSelector:@selector(setSelectedGameIndex:)]) {
+                #pragma clang diagnostic push
+                #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                typedef void (*SetGameFn)(id, SEL, NSInteger);
+                SEL sel = @selector(setSelectedGameIndex:);
+                IMP imp = [espConfigClass methodForSelector:sel];
+                if (imp) {
+                    ((SetGameFn)imp)(espConfigClass, sel, seg.selectedSegmentIndex);
+                }
+                #pragma clang diagnostic pop
+            }
+        }
+    }
+    [self hook_noExploit_gameChanged];
+    [self hook_noExploit_refreshStatus];
+}
+
+- (void)hook_noExploit_gameChanged:(id)sender {
+    if ([self respondsToSelector:@selector(seg)]) {
+        UISegmentedControl *seg = [self performSelector:@selector(seg)];
+        if (seg && [seg isKindOfClass:[UISegmentedControl class]]) {
+            Class espConfigClass = objc_getClass("ProxyESPConfig");
+            if (espConfigClass && [espConfigClass respondsToSelector:@selector(setSelectedGameIndex:)]) {
+                #pragma clang diagnostic push
+                #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                typedef void (*SetGameFn)(id, SEL, NSInteger);
+                SEL sel = @selector(setSelectedGameIndex:);
+                IMP imp = [espConfigClass methodForSelector:sel];
+                if (imp) {
+                    ((SetGameFn)imp)(espConfigClass, sel, seg.selectedSegmentIndex);
+                }
+                #pragma clang diagnostic pop
+            }
+        }
+    }
+    [self hook_noExploit_gameChanged:sender];
+    [self hook_noExploit_refreshStatus];
+}
+
+- (void)hook_noExploit_subTabChanged {
+    [self hook_noExploit_subTabChanged];
     [self hook_noExploit_refreshStatus];
 }
 
@@ -1586,19 +1610,29 @@ static BOOL g_userExplicitlyStopped = NO;
 }
 
 - (void)hook_resetTapped:(id)sender {
-    NSString *gameTitle = @"Free Fire";
-    if ([self respondsToSelector:@selector(seg)]) {
-        UISegmentedControl *seg = [self performSelector:@selector(seg)];
-        if (seg && [seg isKindOfClass:[UISegmentedControl class]]) {
-            if (seg.selectedSegmentIndex == 1) {
-                gameTitle = @"Free Fire MAX";
-            }
-        }
-    }
+    NSString *cname = NSStringFromClass([self class]);
+    BOOL isNoExploit = [cname containsString:@"NoExploit"] || [self.title isEqualToString:@"Mods"];
     
     Class espConfigClass = objc_getClass("ProxyESPConfig");
-    if (espConfigClass && [espConfigClass respondsToSelector:@selector(restoreAll)]) {
-        [espConfigClass performSelector:@selector(restoreAll)];
+    if (espConfigClass) {
+        if ([espConfigClass respondsToSelector:@selector(restoreAll)]) {
+            [espConfigClass performSelector:@selector(restoreAll)];
+        }
+        for (NSInteger i = 0; i < 6; i++) {
+            if ([espConfigClass respondsToSelector:@selector(setOptionEnabledFlag:enabled:)]) {
+                #pragma clang diagnostic push
+                #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                typedef void (*SetOptFn)(id, SEL, NSInteger, BOOL);
+                SEL setOptSel = @selector(setOptionEnabledFlag:enabled:);
+                IMP setOptImp = [espConfigClass methodForSelector:setOptSel];
+                if (setOptImp) {
+                    ((SetOptFn)setOptImp)(espConfigClass, setOptSel, i, NO);
+                }
+                #pragma clang diagnostic pop
+            }
+            NSString *nativeKey = [NSString stringWithFormat:@"proxy.esp.%ld.enabled", (long)i];
+            [[NSUserDefaults standardUserDefaults] setBool:NO forKey:nativeKey];
+        }
     }
     
     [MainMenuThemeEngine clearAllPersistedSwitchStates];
@@ -1606,9 +1640,9 @@ static BOOL g_userExplicitlyStopped = NO;
         [MainMenuThemeEngine setAllSwitchesInView:self.view toOn:NO];
     }
     
-    NSString *cname = NSStringFromClass([self class]);
-    BOOL isExploit = [cname containsString:@"Exploit"] && ![cname containsString:@"NoExploit"];
-    if (isExploit) {
+    if (isNoExploit) {
+        [self hook_noExploit_refreshStatus];
+    } else {
         if ([self respondsToSelector:@selector(statusLabel)]) {
             UILabel *topLbl = [self performSelector:@selector(statusLabel)];
             if (topLbl) {
@@ -1620,12 +1654,8 @@ static BOOL g_userExplicitlyStopped = NO;
                 topLbl.alpha = 1.0;
             }
         }
+        [self hook_refreshStatus];
     }
-    
-    NSString *resetMsg = [NSString stringWithFormat:@"%@\nAll features reset & restored.", gameTitle];
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [MainMenuThemeEngine updateStatusLabelOnController:self message:resetMsg];
-    });
 }
 
 - (void)hook_homeFgAttachSwitchChanged:(id)sender {
@@ -1771,7 +1801,9 @@ static BOOL g_userExplicitlyStopped = NO;
         if (expVCClass) {
             SwizzleMethod(expVCClass, @selector(viewDidLoad), @selector(hook_exploit_viewDidLoad));
             SwizzleMethod(expVCClass, @selector(viewWillAppear:), @selector(hook_exploit_viewWillAppear:));
+            SwizzleMethod(expVCClass, @selector(gameChanged), @selector(hook_exploit_gameChanged));
             SwizzleMethod(expVCClass, @selector(gameChanged:), @selector(hook_exploit_gameChanged:));
+            SwizzleMethod(expVCClass, @selector(subTabChanged), @selector(hook_exploit_subTabChanged));
             SwizzleMethod(expVCClass, @selector(addSwitchRowWithTitle:option:toContainer:y:), @selector(hook_addSwitchRowWithTitle:option:toContainer:y:));
             SwizzleMethod(expVCClass, @selector(_homeStartCheatBackend), @selector(hook_homeStartCheatBackend));
             SwizzleMethod(expVCClass, @selector(ProxyExploitStartTapped), @selector(hook_ProxyExploitStartTapped));
@@ -1792,7 +1824,9 @@ static BOOL g_userExplicitlyStopped = NO;
         if (noExpVCClass) {
             SwizzleMethod(noExpVCClass, @selector(viewDidLoad), @selector(hook_noExploit_viewDidLoad));
             SwizzleMethod(noExpVCClass, @selector(viewWillAppear:), @selector(hook_noExploit_viewWillAppear:));
-            SwizzleMethod(noExpVCClass, @selector(gameChanged:), @selector(hook_gameChanged:));
+            SwizzleMethod(noExpVCClass, @selector(gameChanged), @selector(hook_noExploit_gameChanged));
+            SwizzleMethod(noExpVCClass, @selector(gameChanged:), @selector(hook_noExploit_gameChanged:));
+            SwizzleMethod(noExpVCClass, @selector(subTabChanged), @selector(hook_noExploit_subTabChanged));
             SwizzleMethod(noExpVCClass, @selector(addSwitchRowWithTitle:option:toContainer:y:), @selector(hook_addSwitchRowWithTitle:option:toContainer:y:));
             SwizzleMethod(noExpVCClass, @selector(switchChanged:), @selector(hook_switchChanged:));
             SwizzleMethod(noExpVCClass, @selector(refreshStatus), @selector(hook_noExploit_refreshStatus));
