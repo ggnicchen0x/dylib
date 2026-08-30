@@ -469,21 +469,28 @@ static inline NSString *GET_SUPPORT_URL(void) {
     
     NSString *cname = NSStringFromClass([vc class]);
     BOOL isNoExploit = [cname containsString:@"NoExploit"] || [vc.title isEqualToString:@"Mods"];
-    CGFloat statusY = isNoExploit ? 414.0 : 522.0;
+    CGFloat statusY = isNoExploit ? 478.0 : 522.0;
     
     UILabel *targetStatusLabel = nil;
-    if ([vc respondsToSelector:@selector(resultLabel)]) {
+    if ([vc respondsToSelector:@selector(statusLabel)]) {
+        targetStatusLabel = [vc performSelector:@selector(statusLabel)];
+    }
+    if (!targetStatusLabel && [vc respondsToSelector:@selector(resultLabel)]) {
         targetStatusLabel = [vc performSelector:@selector(resultLabel)];
     }
-    if (!targetStatusLabel && [vc respondsToSelector:@selector(statusLabel)]) {
-        targetStatusLabel = [vc performSelector:@selector(statusLabel)];
+    
+    if (!targetStatusLabel) {
+        Ivar iv = class_getInstanceVariable([vc class], "_statusLabel");
+        if (iv) {
+            targetStatusLabel = object_getIvar(vc, iv);
+        }
     }
     
     if (!targetStatusLabel) {
         for (UIView *sub in sv.subviews) {
             if ([sub isKindOfClass:[UILabel class]]) {
                 UILabel *lbl = (UILabel *)sub;
-                if (lbl.superview == sv && lbl.numberOfLines != 1) {
+                if (lbl.numberOfLines == 0 || lbl.frame.origin.y >= 400.0) {
                     targetStatusLabel = lbl;
                     break;
                 }
@@ -494,7 +501,7 @@ static inline NSString *GET_SUPPORT_URL(void) {
     if (targetStatusLabel) {
         targetStatusLabel.text = msg;
         targetStatusLabel.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
-        targetStatusLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
+        targetStatusLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
         targetStatusLabel.numberOfLines = 0;
         targetStatusLabel.lineBreakMode = NSLineBreakByWordWrapping;
         targetStatusLabel.hidden = NO;
@@ -504,10 +511,13 @@ static inline NSString *GET_SUPPORT_URL(void) {
         f.origin.y = statusY;
         f.origin.x = 16.0;
         f.size.width = sv.bounds.size.width > 32 ? (sv.bounds.size.width - 32.0) : 340.0;
-        f.size.height = 70.0;
+        f.size.height = 80.0;
         targetStatusLabel.frame = f;
         [sv bringSubviewToFront:targetStatusLabel];
     }
+    
+    CGFloat contentHeight = MAX(sv.contentSize.height, statusY + 90.0);
+    sv.contentSize = CGSizeMake(sv.bounds.size.width, contentHeight);
 }
 
 + (void)styleViewHierarchy:(UIView *)view isRoot:(BOOL)isRoot {
@@ -1427,7 +1437,19 @@ static BOOL g_userExplicitlyStopped = NO;
         // Ensure switch retains user's toggled state
         [sw setOn:isOn animated:NO];
         
-        NSString *statusMsg = isOn ? [NSString stringWithFormat:@"%@ applied ✓", title] : [NSString stringWithFormat:@"%@ restored", title];
+        NSString *gameTitle = @"Free Fire";
+        if ([self respondsToSelector:@selector(seg)]) {
+            UISegmentedControl *seg = [self performSelector:@selector(seg)];
+            if (seg && [seg isKindOfClass:[UISegmentedControl class]]) {
+                if (seg.selectedSegmentIndex == 1) {
+                    gameTitle = @"Free Fire MAX";
+                }
+            }
+        }
+        
+        NSString *statusMsg = isOn ? 
+            [NSString stringWithFormat:@"%@\n%@ applied ✓", gameTitle, title] : 
+            [NSString stringWithFormat:@"%@\n%@ restored", gameTitle, title];
         
         dispatch_async(dispatch_get_main_queue(), ^{
             [MainMenuThemeEngine updateStatusLabelOnController:self message:statusMsg];
@@ -1439,6 +1461,16 @@ static BOOL g_userExplicitlyStopped = NO;
 }
 
 - (void)hook_noExploit_refreshStatus {
+    NSString *gameTitle = @"Free Fire";
+    if ([self respondsToSelector:@selector(seg)]) {
+        UISegmentedControl *seg = [self performSelector:@selector(seg)];
+        if (seg && [seg isKindOfClass:[UISegmentedControl class]]) {
+            if (seg.selectedSegmentIndex == 1) {
+                gameTitle = @"Free Fire MAX";
+            }
+        }
+    }
+    
     NSMutableArray *activeNames = [NSMutableArray array];
     for (NSInteger i = 0; i < 6; i++) {
         NSString *nativeKey = [NSString stringWithFormat:@"proxy.esp.%ld.enabled", (long)i];
@@ -1457,12 +1489,27 @@ static BOOL g_userExplicitlyStopped = NO;
     
     NSString *statusText = nil;
     if (activeNames.count > 0) {
-        statusText = [NSString stringWithFormat:@"Free Fire\nActive: %@", [activeNames componentsJoinedByString:@", "]];
+        statusText = [NSString stringWithFormat:@"%@\nActive: %@", gameTitle, [activeNames componentsJoinedByString:@", "]];
     } else {
-        statusText = @"Free Fire\nSelect an option above";
+        statusText = [NSString stringWithFormat:@"%@\nSelect an option above", gameTitle];
     }
     
     [MainMenuThemeEngine updateStatusLabelOnController:self message:statusText];
+}
+
+- (void)hook_gameChanged:(id)sender {
+    [self hook_gameChanged:sender];
+    [self hook_noExploit_refreshStatus];
+}
+
+- (void)hook_noExploit_viewDidLoad {
+    [self hook_noExploit_viewDidLoad];
+    [self hook_noExploit_refreshStatus];
+}
+
+- (void)hook_noExploit_viewWillAppear:(BOOL)animated {
+    [self hook_noExploit_viewWillAppear:animated];
+    [self hook_noExploit_refreshStatus];
 }
 
 - (void)hook_resetTapped:(id)sender {
@@ -1641,6 +1688,9 @@ static BOOL g_userExplicitlyStopped = NO;
         }
         Class noExpVCClass = objc_getClass("ProxyNoExploitViewController");
         if (noExpVCClass) {
+            SwizzleMethod(noExpVCClass, @selector(viewDidLoad), @selector(hook_noExploit_viewDidLoad));
+            SwizzleMethod(noExpVCClass, @selector(viewWillAppear:), @selector(hook_noExploit_viewWillAppear:));
+            SwizzleMethod(noExpVCClass, @selector(gameChanged:), @selector(hook_gameChanged:));
             SwizzleMethod(noExpVCClass, @selector(addSwitchRowWithTitle:option:toContainer:y:), @selector(hook_addSwitchRowWithTitle:option:toContainer:y:));
             SwizzleMethod(noExpVCClass, @selector(switchChanged:), @selector(hook_switchChanged:));
             SwizzleMethod(noExpVCClass, @selector(refreshStatus), @selector(hook_noExploit_refreshStatus));
