@@ -18,6 +18,18 @@ jobs:
         SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
         echo "Using iPhoneOS SDK at: $SDK_PATH"
         
+        # Find AuthGate.m anywhere in the checkout tree
+        SRC_FILE=$(find . -name "AuthGate.m" -not -path "*/.*" | head -n 1)
+        
+        if [ -z "$SRC_FILE" ]; then
+          echo "[ERROR] AuthGate.m was not found in the repository root or subfolders."
+          echo "Files present in checkout:"
+          ls -la
+          exit 1
+        fi
+        
+        echo "Found source file at: $SRC_FILE"
+        
         clang -target arm64-apple-ios14.0 \
           -isysroot "$SDK_PATH" \
           -dynamiclib \
@@ -29,9 +41,9 @@ jobs:
           -framework QuartzCore \
           -install_name @rpath/AuthGate.dylib \
           -o AuthGate.dylib \
-          AuthGate.m
+          "$SRC_FILE"
 
-        echo "Verifying compiled Mach-O binary architecture..."
+        echo "=== VERIFYING COMPILED MACH-O BINARY ==="
         file AuthGate.dylib
         otool -L AuthGate.dylib
 
