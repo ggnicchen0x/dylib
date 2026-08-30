@@ -1610,8 +1610,18 @@ static BOOL g_userExplicitlyStopped = NO;
 }
 
 - (void)hook_resetTapped:(id)sender {
+    NSString *gameTitle = @"Free Fire";
+    if ([self respondsToSelector:@selector(seg)]) {
+        UISegmentedControl *seg = [self performSelector:@selector(seg)];
+        if (seg && [seg isKindOfClass:[UISegmentedControl class]]) {
+            if (seg.selectedSegmentIndex == 1) {
+                gameTitle = @"Free Fire MAX";
+            }
+        }
+    }
+    
     NSString *cname = NSStringFromClass([self class]);
-    BOOL isNoExploit = [cname containsString:@"NoExploit"] || [self.title isEqualToString:@"Mods"];
+    BOOL isExploit = [cname containsString:@"Exploit"] && ![cname containsString:@"NoExploit"];
     
     Class espConfigClass = objc_getClass("ProxyESPConfig");
     if (espConfigClass) {
@@ -1640,9 +1650,7 @@ static BOOL g_userExplicitlyStopped = NO;
         [MainMenuThemeEngine setAllSwitchesInView:self.view toOn:NO];
     }
     
-    if (isNoExploit) {
-        [self hook_noExploit_refreshStatus];
-    } else {
+    if (isExploit) {
         if ([self respondsToSelector:@selector(statusLabel)]) {
             UILabel *topLbl = [self performSelector:@selector(statusLabel)];
             if (topLbl) {
@@ -1654,8 +1662,12 @@ static BOOL g_userExplicitlyStopped = NO;
                 topLbl.alpha = 1.0;
             }
         }
-        [self hook_refreshStatus];
     }
+    
+    NSString *resetMsg = [NSString stringWithFormat:@"%@\nAll features reset & restored.", gameTitle];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [MainMenuThemeEngine updateStatusLabelOnController:self message:resetMsg];
+    });
 }
 
 - (void)hook_homeFgAttachSwitchChanged:(id)sender {
