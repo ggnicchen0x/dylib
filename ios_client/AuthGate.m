@@ -1325,10 +1325,7 @@ static BOOL g_userExplicitlyStopped = NO;
             btn.layer.shadowOpacity = 0.4;
             btn.userInteractionEnabled = YES;
         }
-        return;
-    }
-    
-    if ([btnTitle isEqualToString:@"STOP"]) {
+    } else if ([btnTitle isEqualToString:@"STOP"]) {
         objc_setAssociatedObject(self, "kExploitIsStartingKey", @(NO), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         if (btn) {
             btn.backgroundColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.25 alpha:0.25];
@@ -1365,7 +1362,53 @@ static BOOL g_userExplicitlyStopped = NO;
             btn.layer.borderWidth = 0.0;
             btn.layer.cornerRadius = 10;
         }
+        if (statusLbl) {
+            if (statusLbl.text.length == 0 || [statusLbl.text isEqualToString:@"Home"] || [statusLbl.text isEqualToString:@"Mods"]) {
+                statusLbl.text = @"Exploit: ready (standby)\nSandbox: optional (use Mods tab)";
+            }
+            statusLbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
+            statusLbl.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+            statusLbl.numberOfLines = 2;
+            statusLbl.hidden = NO;
+            statusLbl.alpha = 1.0;
+        }
     }
+    
+    // Bottom status label (resultLabel) refresh:
+    NSString *gameTitle = @"Free Fire";
+    if ([self respondsToSelector:@selector(seg)]) {
+        UISegmentedControl *seg = [self performSelector:@selector(seg)];
+        if (seg && [seg isKindOfClass:[UISegmentedControl class]]) {
+            if (seg.selectedSegmentIndex == 1) {
+                gameTitle = @"Free Fire MAX";
+            }
+        }
+    }
+    
+    NSMutableArray *activeNames = [NSMutableArray array];
+    for (NSInteger i = 0; i < 6; i++) {
+        NSString *nativeKey = [NSString stringWithFormat:@"proxy.esp.%ld.enabled", (long)i];
+        NSString *customKey = [NSString stringWithFormat:@"kExtFF_Switch_ProxyExploitViewController_Opt%ld", (long)i];
+        BOOL on = [[NSUserDefaults standardUserDefaults] boolForKey:nativeKey] || [[NSUserDefaults standardUserDefaults] boolForKey:customKey];
+        if (on) {
+            NSString *optTitle = @"Feature";
+            if (i == 0) optTitle = @"Drag";
+            else if (i == 1) optTitle = @"100% Body";
+            else if (i == 2) optTitle = @"95% Body";
+            else if (i == 3) optTitle = @"200% Magic Bullet";
+            else if (i == 5) optTitle = @"Visuals";
+            [activeNames addObject:optTitle];
+        }
+    }
+    
+    NSString *statusText = nil;
+    if (activeNames.count > 0) {
+        statusText = [NSString stringWithFormat:@"%@\nActive: %@", gameTitle, [activeNames componentsJoinedByString:@", "]];
+    } else {
+        statusText = [NSString stringWithFormat:@"%@\nSelect an option above", gameTitle];
+    }
+    
+    [MainMenuThemeEngine updateStatusLabelOnController:self message:statusText];
 }
 
 - (void)hook_exploitStateChanged {
