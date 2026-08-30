@@ -468,71 +468,43 @@ static inline NSString *GET_SUPPORT_URL(void) {
     if (!sv) return;
     
     NSString *cname = NSStringFromClass([vc class]);
-    BOOL isExploit = [cname containsString:@"Exploit"] && ![cname containsString:@"NoExploit"];
+    BOOL isNoExploit = [cname containsString:@"NoExploit"] || [vc.title isEqualToString:@"Mods"];
+    CGFloat statusY = isNoExploit ? 414.0 : 522.0;
     
-    UILabel *bottomLabel = nil;
-    if (isExploit) {
-        // For Home page (ProxyExploitViewController): bottom label is resultLabel!
-        if ([vc respondsToSelector:@selector(resultLabel)]) {
-            bottomLabel = [vc performSelector:@selector(resultLabel)];
-        }
-        
-        // Ensure top card statusLabel stays in top card and is never blank
-        if ([vc respondsToSelector:@selector(statusLabel)]) {
-            UILabel *topLbl = [vc performSelector:@selector(statusLabel)];
-            if (topLbl) {
-                if (topLbl.text.length == 0 || [topLbl.text isEqualToString:@"Home"] || [topLbl.text isEqualToString:@"Mods"]) {
-                    topLbl.text = @"Exploit: ready (standby)\nSandbox: optional (use Mods tab)";
-                }
-                topLbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
-                topLbl.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
-                topLbl.numberOfLines = 2;
-                topLbl.hidden = NO;
-                topLbl.alpha = 1.0;
-            }
-        }
-    } else {
-        // For Mods page (ProxyNoExploitViewController): bottom label is statusLabel!
-        if ([vc respondsToSelector:@selector(statusLabel)]) {
-            bottomLabel = [vc performSelector:@selector(statusLabel)];
-        }
+    UILabel *targetStatusLabel = nil;
+    if ([vc respondsToSelector:@selector(resultLabel)]) {
+        targetStatusLabel = [vc performSelector:@selector(resultLabel)];
     }
     
-    if (!bottomLabel) {
+    if (!targetStatusLabel) {
         for (UIView *sub in sv.subviews) {
             if ([sub isKindOfClass:[UILabel class]]) {
                 UILabel *lbl = (UILabel *)sub;
-                if (lbl.numberOfLines == 0 && lbl.frame.origin.y >= 400.0) {
-                    bottomLabel = lbl;
+                if (lbl.superview == sv && lbl.numberOfLines != 1) {
+                    targetStatusLabel = lbl;
                     break;
                 }
             }
         }
     }
     
-    if (bottomLabel) {
-        bottomLabel.text = msg;
-        bottomLabel.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
-        bottomLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
-        bottomLabel.numberOfLines = 0;
-        bottomLabel.lineBreakMode = NSLineBreakByWordWrapping;
-        bottomLabel.hidden = NO;
-        bottomLabel.alpha = 1.0;
+    if (targetStatusLabel) {
+        targetStatusLabel.text = msg;
+        targetStatusLabel.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
+        targetStatusLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
+        targetStatusLabel.numberOfLines = 0;
+        targetStatusLabel.lineBreakMode = NSLineBreakByWordWrapping;
+        targetStatusLabel.hidden = NO;
+        targetStatusLabel.alpha = 1.0;
         
-        CGRect f = bottomLabel.frame;
-        CGFloat targetY = isExploit ? 582.0 : 478.0;
-        if (f.origin.y < 400.0 || f.origin.y > 650.0) {
-            f.origin.y = targetY;
-        }
+        CGRect f = targetStatusLabel.frame;
+        f.origin.y = statusY;
         f.origin.x = 16.0;
         f.size.width = sv.bounds.size.width > 32 ? (sv.bounds.size.width - 32.0) : 340.0;
-        f.size.height = 80.0;
-        bottomLabel.frame = f;
-        [sv bringSubviewToFront:bottomLabel];
+        f.size.height = 70.0;
+        targetStatusLabel.frame = f;
+        [sv bringSubviewToFront:targetStatusLabel];
     }
-    
-    CGFloat contentHeight = isExploit ? 740.0 : 600.0;
-    sv.contentSize = CGSizeMake(sv.bounds.size.width, MAX(sv.contentSize.height, contentHeight));
 }
 
 + (void)styleViewHierarchy:(UIView *)view isRoot:(BOOL)isRoot {
@@ -723,17 +695,11 @@ static inline NSString *GET_SUPPORT_URL(void) {
         if ([sub isKindOfClass:[UISwitch class]]) {
             UISwitch *sw = (UISwitch *)sub;
             NSString *optKey = [NSString stringWithFormat:@"kExtFF_Switch_%@_Opt%ld", cname, (long)sw.tag];
-            NSString *nativeKey = [NSString stringWithFormat:@"proxy.esp.%ld.enabled", (long)sw.tag];
-            
-            BOOL savedOn = NO;
-            if ([[NSUserDefaults standardUserDefaults] objectForKey:optKey] != nil) {
-                savedOn = [[NSUserDefaults standardUserDefaults] boolForKey:optKey];
-            } else if ([[NSUserDefaults standardUserDefaults] objectForKey:nativeKey] != nil) {
-                savedOn = [[NSUserDefaults standardUserDefaults] boolForKey:nativeKey];
-            }
-            
-            if (sw.isOn != savedOn) {
-                [sw setOn:savedOn animated:NO];
+            if ([[NSUserDefaults standardUserDefaults] objectForKey:optKey]) {
+                BOOL savedOn = [[NSUserDefaults standardUserDefaults] boolForKey:optKey];
+                if (sw.isOn != savedOn) {
+                    [sw setOn:savedOn animated:NO];
+                }
             }
         }
         [self restoreSwitchesInViewHierarchy:sub className:cname];
@@ -754,7 +720,7 @@ static inline NSString *GET_SUPPORT_URL(void) {
 + (void)clearAllPersistedSwitchStates {
     NSDictionary *allDefaults = [[NSUserDefaults standardUserDefaults] dictionaryRepresentation];
     for (NSString *k in allDefaults.allKeys) {
-        if ([k hasPrefix:@"kExtFF_Switch_"] || [k hasPrefix:@"proxy.esp."]) {
+        if ([k hasPrefix:@"kExtFF_Switch_"]) {
             [[NSUserDefaults standardUserDefaults] removeObjectForKey:k];
         }
     }
@@ -893,7 +859,7 @@ static inline NSString *GET_SUPPORT_URL(void) {
 @implementation NSObject (FluckAuthCoreBypassHooks)
 
 - (BOOL)hook_fluck_gatePassed {
-    return YES;
+    return [LiveSecurityGuard isSessionAuthorized];
 }
 
 - (NSString *)hook_fluck_savedKey {
@@ -1085,20 +1051,6 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     }
 }
 
-static void SwizzleClassMethod(Class cls, SEL origSel, SEL newSel) {
-    Class metaCls = object_getClass((id)cls);
-    Method origMethod = class_getClassMethod(cls, origSel);
-    Method newMethod = class_getClassMethod(cls, newSel);
-    if (!origMethod || !newMethod) return;
-    
-    BOOL didAdd = class_addMethod(metaCls, origSel, method_getImplementation(newMethod), method_getTypeEncoding(newMethod));
-    if (didAdd) {
-        class_replaceMethod(metaCls, newSel, method_getImplementation(origMethod), method_getTypeEncoding(origMethod));
-    } else {
-        method_exchangeImplementations(origMethod, newMethod);
-    }
-}
-
 // ==========================================
 // RootViewController Account Tab Access Blocker
 // ==========================================
@@ -1161,12 +1113,14 @@ static void SwizzleClassMethod(Class cls, SEL origSel, SEL newSel) {
             self.tabBarItem.title = @"Home";
         }
         
+        // Restore all switch states
+        [MainMenuThemeEngine restoreAllSwitchStatesInViewController:self];
+        
         // Apply theme styling only once to prevent re-layout stutter when toggling switches
         static const char *kThemeAppliedKey = "kExternalFFThemeAppliedKey";
         if (!objc_getAssociatedObject(self, kThemeAppliedKey)) {
             objc_setAssociatedObject(self, kThemeAppliedKey, @(YES), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             [MainMenuThemeEngine styleViewController:self];
-            [MainMenuThemeEngine restoreAllSwitchStatesInViewController:self];
         }
     }
 }
@@ -1339,7 +1293,10 @@ static BOOL g_userExplicitlyStopped = NO;
             btn.layer.shadowOpacity = 0.4;
             btn.userInteractionEnabled = YES;
         }
-    } else if ([btnTitle isEqualToString:@"STOP"]) {
+        return;
+    }
+    
+    if ([btnTitle isEqualToString:@"STOP"]) {
         objc_setAssociatedObject(self, "kExploitIsStartingKey", @(NO), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         if (btn) {
             btn.backgroundColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.25 alpha:0.25];
@@ -1376,53 +1333,7 @@ static BOOL g_userExplicitlyStopped = NO;
             btn.layer.borderWidth = 0.0;
             btn.layer.cornerRadius = 10;
         }
-        if (statusLbl) {
-            if (statusLbl.text.length == 0 || [statusLbl.text isEqualToString:@"Home"] || [statusLbl.text isEqualToString:@"Mods"]) {
-                statusLbl.text = @"Exploit: ready (standby)\nSandbox: optional (use Mods tab)";
-            }
-            statusLbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
-            statusLbl.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
-            statusLbl.numberOfLines = 2;
-            statusLbl.hidden = NO;
-            statusLbl.alpha = 1.0;
-        }
     }
-    
-    // Bottom status label (resultLabel) refresh:
-    NSString *gameTitle = @"Free Fire";
-    if ([self respondsToSelector:@selector(seg)]) {
-        UISegmentedControl *seg = [self performSelector:@selector(seg)];
-        if (seg && [seg isKindOfClass:[UISegmentedControl class]]) {
-            if (seg.selectedSegmentIndex == 1) {
-                gameTitle = @"Free Fire MAX";
-            }
-        }
-    }
-    
-    NSMutableArray *activeNames = [NSMutableArray array];
-    for (NSInteger i = 0; i < 6; i++) {
-        NSString *nativeKey = [NSString stringWithFormat:@"proxy.esp.%ld.enabled", (long)i];
-        NSString *customKey = [NSString stringWithFormat:@"kExtFF_Switch_ProxyExploitViewController_Opt%ld", (long)i];
-        BOOL on = [[NSUserDefaults standardUserDefaults] boolForKey:nativeKey] || [[NSUserDefaults standardUserDefaults] boolForKey:customKey];
-        if (on) {
-            NSString *optTitle = @"Feature";
-            if (i == 0) optTitle = @"Drag";
-            else if (i == 1) optTitle = @"100% Body";
-            else if (i == 2) optTitle = @"95% Body";
-            else if (i == 3) optTitle = @"200% Magic Bullet";
-            else if (i == 5) optTitle = @"Visuals";
-            [activeNames addObject:optTitle];
-        }
-    }
-    
-    NSString *statusText = nil;
-    if (activeNames.count > 0) {
-        statusText = [NSString stringWithFormat:@"%@\nActive: %@", gameTitle, [activeNames componentsJoinedByString:@", "]];
-    } else {
-        statusText = [NSString stringWithFormat:@"%@\nSelect an option above", gameTitle];
-    }
-    
-    [MainMenuThemeEngine updateStatusLabelOnController:self message:statusText];
 }
 
 - (void)hook_exploitStateChanged {
@@ -1439,285 +1350,55 @@ static BOOL g_userExplicitlyStopped = NO;
         return;
     }
     
+    [self hook_switchChanged:sender];
+    
     if ([sender isKindOfClass:[UISwitch class]]) {
         UISwitch *sw = (UISwitch *)sender;
         BOOL isOn = sw.isOn;
         
-        // 1. Persist state to NSUserDefaults immediately BEFORE calling original / triggering layout
+        NSString *title = nil;
+        UIView *parent = sw.superview;
+        if (parent) {
+            for (UIView *sub in parent.subviews) {
+                if ([sub isKindOfClass:[UILabel class]]) {
+                    title = [(UILabel *)sub text];
+                    break;
+                }
+            }
+        }
+        
+        if (!title || title.length == 0) {
+            NSInteger tag = sw.tag;
+            if (tag == 0) title = @"Drag";
+            else if (tag == 1) title = @"100% Body";
+            else if (tag == 2) title = @"95% Body";
+            else if (tag == 3) title = @"200% Magic Bullet";
+            else if (tag == 5) title = @"Visuals";
+            else title = @"Feature";
+        }
+        
+        // 1. Persist state to NSUserDefaults immediately
         NSString *cname = NSStringFromClass([self class]);
         NSString *optKey = [NSString stringWithFormat:@"kExtFF_Switch_%@_Opt%ld", cname, (long)sw.tag];
-        NSString *nativeKey = [NSString stringWithFormat:@"proxy.esp.%ld.enabled", (long)sw.tag];
         [[NSUserDefaults standardUserDefaults] setBool:isOn forKey:optKey];
-        [[NSUserDefaults standardUserDefaults] setBool:isOn forKey:nativeKey];
         [[NSUserDefaults standardUserDefaults] synchronize];
         
-        BOOL isNoExploit = [cname containsString:@"NoExploit"] || [self.title isEqualToString:@"Mods"];
+        NSString *statusMsg = isOn ? [NSString stringWithFormat:@"%@ applied ✓", title] : [NSString stringWithFormat:@"%@ restored", title];
         
-        if (isNoExploit) {
-            // For Mods page (NoExploit): apply/restore mod via ProxyESPConfig directly
-            Class espConfigClass = objc_getClass("ProxyESPConfig");
-            if (espConfigClass) {
-                if ([espConfigClass respondsToSelector:@selector(setOption:enabled:)]) {
-                    #pragma clang diagnostic push
-                    #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                    typedef void (*SetOptFn)(id, SEL, NSInteger, BOOL);
-                    SEL setOptSel = @selector(setOption:enabled:);
-                    IMP setOptImp = [espConfigClass methodForSelector:setOptSel];
-                    if (setOptImp) {
-                        ((SetOptFn)setOptImp)(espConfigClass, setOptSel, sw.tag, isOn);
-                    }
-                    #pragma clang diagnostic pop
-                } else {
-                    if ([espConfigClass respondsToSelector:@selector(setOptionEnabledFlag:enabled:)]) {
-                        #pragma clang diagnostic push
-                        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                        typedef void (*SetOptFn)(id, SEL, NSInteger, BOOL);
-                        SEL setOptSel = @selector(setOptionEnabledFlag:enabled:);
-                        IMP setOptImp = [espConfigClass methodForSelector:setOptSel];
-                        if (setOptImp) {
-                            ((SetOptFn)setOptImp)(espConfigClass, setOptSel, sw.tag, isOn);
-                        }
-                        #pragma clang diagnostic pop
-                    }
-                    if (sw.tag == 5) {
-                        if ([espConfigClass respondsToSelector:@selector(applyVisuals:)]) {
-                            #pragma clang diagnostic push
-                            #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                            typedef BOOL (*ApplyVisFn)(id, SEL, BOOL);
-                            SEL visSel = @selector(applyVisuals:);
-                            IMP visImp = [espConfigClass methodForSelector:visSel];
-                            if (visImp) {
-                                ((ApplyVisFn)visImp)(espConfigClass, visSel, isOn);
-                            }
-                            #pragma clang diagnostic pop
-                        }
-                    } else {
-                        if ([espConfigClass respondsToSelector:@selector(rewriteFileWithStatus)]) {
-                            #pragma clang diagnostic push
-                            #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                            typedef NSInteger (*RewriteFn)(id, SEL);
-                            SEL rewSel = @selector(rewriteFileWithStatus);
-                            IMP rewImp = [espConfigClass methodForSelector:rewSel];
-                            if (rewImp) {
-                                ((RewriteFn)rewImp)(espConfigClass, rewSel);
-                            }
-                            #pragma clang diagnostic pop
-                        } else if ([espConfigClass respondsToSelector:@selector(rewriteFile)]) {
-                            [espConfigClass performSelector:@selector(rewriteFile)];
-                        }
-                    }
-                }
-            }
-            
-            // Ensure switch retains user's toggled state
-            [sw setOn:isOn animated:NO];
-            
-            // Immediately update standalone status label like ProxyVN
-            [self hook_noExploit_refreshStatus];
-            return;
-        } else {
-            // For Home page (Exploit page): call through to original exploit-based handler
-            [self hook_switchChanged:sender];
-            [sw setOn:isOn animated:NO];
-            [self hook_refreshStatus];
-            return;
-        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [MainMenuThemeEngine updateStatusLabelOnController:self message:statusMsg];
+        });
     }
-    
-    [self hook_switchChanged:sender];
-}
-
-- (void)hook_exploit_viewDidLoad {
-    [self hook_exploit_viewDidLoad];
-    [self hook_refreshStatus];
-}
-
-- (void)hook_exploit_viewWillAppear:(BOOL)animated {
-    [self hook_exploit_viewWillAppear:animated];
-    [self hook_refreshStatus];
-}
-
-- (void)hook_exploit_gameChanged {
-    [self hook_exploit_gameChanged];
-    [self hook_refreshStatus];
-}
-
-- (void)hook_exploit_gameChanged:(id)sender {
-    [self hook_exploit_gameChanged:sender];
-    [self hook_refreshStatus];
-}
-
-- (void)hook_exploit_subTabChanged {
-    [self hook_exploit_subTabChanged];
-    [self hook_refreshStatus];
-}
-
-- (void)hook_noExploit_refreshStatus {
-    NSString *gameTitle = @"Free Fire";
-    if ([self respondsToSelector:@selector(seg)]) {
-        UISegmentedControl *seg = [self performSelector:@selector(seg)];
-        if (seg && [seg isKindOfClass:[UISegmentedControl class]]) {
-            if (seg.selectedSegmentIndex == 1) {
-                gameTitle = @"Free Fire MAX";
-            }
-        }
-    }
-    
-    NSMutableArray *activeNames = [NSMutableArray array];
-    for (NSInteger i = 0; i < 6; i++) {
-        if (i == 4) continue; // ModChest is hidden
-        NSString *nativeKey = [NSString stringWithFormat:@"proxy.esp.%ld.enabled", (long)i];
-        NSString *customKey = [NSString stringWithFormat:@"kExtFF_Switch_ProxyNoExploitViewController_Opt%ld", (long)i];
-        BOOL on = [[NSUserDefaults standardUserDefaults] boolForKey:nativeKey] || [[NSUserDefaults standardUserDefaults] boolForKey:customKey];
-        if (on) {
-            NSString *optTitle = @"Feature";
-            if (i == 0) optTitle = @"Drag";
-            else if (i == 1) optTitle = @"100% Body";
-            else if (i == 2) optTitle = @"95% Body";
-            else if (i == 3) optTitle = @"200% Magic Bullet";
-            else if (i == 5) optTitle = @"Visuals";
-            [activeNames addObject:optTitle];
-        }
-    }
-    
-    NSString *statusText = nil;
-    if (activeNames.count > 0) {
-        statusText = [NSString stringWithFormat:@"%@\nActive: %@", gameTitle, [activeNames componentsJoinedByString:@", "]];
-    } else {
-        statusText = [NSString stringWithFormat:@"%@\nSelect an option above", gameTitle];
-    }
-    
-    [MainMenuThemeEngine updateStatusLabelOnController:self message:statusText];
-}
-
-- (void)hook_noExploit_gameChanged {
-    if ([self respondsToSelector:@selector(seg)]) {
-        UISegmentedControl *seg = [self performSelector:@selector(seg)];
-        if (seg && [seg isKindOfClass:[UISegmentedControl class]]) {
-            Class espConfigClass = objc_getClass("ProxyESPConfig");
-            if (espConfigClass && [espConfigClass respondsToSelector:@selector(setSelectedGameIndex:)]) {
-                #pragma clang diagnostic push
-                #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                typedef void (*SetGameFn)(id, SEL, NSInteger);
-                SEL sel = @selector(setSelectedGameIndex:);
-                IMP imp = [espConfigClass methodForSelector:sel];
-                if (imp) {
-                    ((SetGameFn)imp)(espConfigClass, sel, seg.selectedSegmentIndex);
-                }
-                #pragma clang diagnostic pop
-            }
-        }
-    }
-    [self hook_noExploit_gameChanged];
-    [self hook_noExploit_refreshStatus];
-}
-
-- (void)hook_noExploit_gameChanged:(id)sender {
-    if ([self respondsToSelector:@selector(seg)]) {
-        UISegmentedControl *seg = [self performSelector:@selector(seg)];
-        if (seg && [seg isKindOfClass:[UISegmentedControl class]]) {
-            Class espConfigClass = objc_getClass("ProxyESPConfig");
-            if (espConfigClass && [espConfigClass respondsToSelector:@selector(setSelectedGameIndex:)]) {
-                #pragma clang diagnostic push
-                #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                typedef void (*SetGameFn)(id, SEL, NSInteger);
-                SEL sel = @selector(setSelectedGameIndex:);
-                IMP imp = [espConfigClass methodForSelector:sel];
-                if (imp) {
-                    ((SetGameFn)imp)(espConfigClass, sel, seg.selectedSegmentIndex);
-                }
-                #pragma clang diagnostic pop
-            }
-        }
-    }
-    [self hook_noExploit_gameChanged:sender];
-    [self hook_noExploit_refreshStatus];
-}
-
-- (void)hook_noExploit_subTabChanged {
-    [self hook_noExploit_subTabChanged];
-    [self hook_noExploit_refreshStatus];
-}
-
-- (void)hook_noExploit_viewDidLoad {
-    [self hook_noExploit_viewDidLoad];
-    [self hook_noExploit_refreshStatus];
-}
-
-- (void)hook_noExploit_viewWillAppear:(BOOL)animated {
-    [self hook_noExploit_viewWillAppear:animated];
-    [self hook_noExploit_refreshStatus];
 }
 
 - (void)hook_resetTapped:(id)sender {
-    NSString *gameTitle = @"Free Fire";
-    if ([self respondsToSelector:@selector(seg)]) {
-        UISegmentedControl *seg = [self performSelector:@selector(seg)];
-        if (seg && [seg isKindOfClass:[UISegmentedControl class]]) {
-            if (seg.selectedSegmentIndex == 1) {
-                gameTitle = @"Free Fire MAX";
-            }
-        }
-    }
-    
-    NSString *cname = NSStringFromClass([self class]);
-    BOOL isExploit = [cname containsString:@"Exploit"] && ![cname containsString:@"NoExploit"];
-    
-    Class espConfigClass = objc_getClass("ProxyESPConfig");
-    if (espConfigClass) {
-        if ([espConfigClass respondsToSelector:@selector(restoreAll)]) {
-            [espConfigClass performSelector:@selector(restoreAll)];
-        }
-        for (NSInteger i = 0; i < 6; i++) {
-            if ([espConfigClass respondsToSelector:@selector(setOptionEnabledFlag:enabled:)]) {
-                #pragma clang diagnostic push
-                #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                typedef void (*SetOptFn)(id, SEL, NSInteger, BOOL);
-                SEL setOptSel = @selector(setOptionEnabledFlag:enabled:);
-                IMP setOptImp = [espConfigClass methodForSelector:setOptSel];
-                if (setOptImp) {
-                    ((SetOptFn)setOptImp)(espConfigClass, setOptSel, i, NO);
-                }
-                #pragma clang diagnostic pop
-            }
-            NSString *nativeKey = [NSString stringWithFormat:@"proxy.esp.%ld.enabled", (long)i];
-            [[NSUserDefaults standardUserDefaults] setBool:NO forKey:nativeKey];
-        }
-        if ([espConfigClass respondsToSelector:@selector(applyVisuals:)]) {
-            #pragma clang diagnostic push
-            #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-            typedef BOOL (*ApplyVisFn)(id, SEL, BOOL);
-            SEL visSel = @selector(applyVisuals:);
-            IMP visImp = [espConfigClass methodForSelector:visSel];
-            if (visImp) {
-                ((ApplyVisFn)visImp)(espConfigClass, visSel, NO);
-            }
-            #pragma clang diagnostic pop
-        }
-    }
-    
+    [self hook_resetTapped:sender];
     [MainMenuThemeEngine clearAllPersistedSwitchStates];
     if (self.view) {
         [MainMenuThemeEngine setAllSwitchesInView:self.view toOn:NO];
     }
-    
-    if (isExploit) {
-        if ([self respondsToSelector:@selector(statusLabel)]) {
-            UILabel *topLbl = [self performSelector:@selector(statusLabel)];
-            if (topLbl) {
-                topLbl.text = @"Exploit: ready (standby)\nSandbox: optional (use Mods tab)";
-                topLbl.textColor = [UIColor colorWithRed:0.78 green:0.83 blue:0.94 alpha:1.0];
-                topLbl.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
-                topLbl.numberOfLines = 2;
-                topLbl.hidden = NO;
-                topLbl.alpha = 1.0;
-            }
-        }
-    }
-    
-    NSString *resetMsg = [NSString stringWithFormat:@"%@\nAll features reset & restored.", gameTitle];
     dispatch_async(dispatch_get_main_queue(), ^{
-        [MainMenuThemeEngine updateStatusLabelOnController:self message:resetMsg];
+        [MainMenuThemeEngine updateStatusLabelOnController:self message:@"All features reset & restored."];
     });
 }
 
@@ -1798,63 +1479,35 @@ static BOOL g_userExplicitlyStopped = NO;
 }
 
 // Hook bytesForPatch: on ProxyPatchBytes to load from bundle modfiles/ instead of FluckAuth server
-+ (id)hook_bytesForPatch:(id)patchName {
+- (id)hook_bytesForPatch:(id)patchName {
+    // Try loading from the app bundle's modfiles/ directory first
     if (patchName && [patchName isKindOfClass:[NSString class]]) {
         NSString *name = (NSString *)patchName;
         NSBundle *bundle = [NSBundle mainBundle];
         
-        NSArray *candidatePaths = @[
-            [bundle pathForResource:[NSString stringWithFormat:@"%@.dat", name] ofType:nil inDirectory:@"modfiles"],
-            [bundle pathForResource:name ofType:nil inDirectory:@"modfiles"],
-            [bundle pathForResource:[NSString stringWithFormat:@"%@.dat", name] ofType:nil],
-            [bundle pathForResource:name ofType:nil]
-        ];
-        
-        for (NSString *cand in candidatePaths) {
-            if (cand && [[NSFileManager defaultManager] fileExistsAtPath:cand]) {
-                NSData *data = [NSData dataWithContentsOfFile:cand];
-                if (data && data.length > 0) {
-                    return data;
-                }
-            }
+        // Try modfiles/<name>.dat first
+        NSString *datPath = [bundle pathForResource:[NSString stringWithFormat:@"%@.dat", name]
+                                             ofType:nil
+                                        inDirectory:@"modfiles"];
+        if (!datPath) {
+            // Try direct name in modfiles/
+            datPath = [bundle pathForResource:name ofType:nil inDirectory:@"modfiles"];
+        }
+        if (!datPath) {
+            // Try root bundle with name as-is
+            datPath = [bundle pathForResource:name ofType:nil];
         }
         
-        // Keyword fallback if exact filename differs
-        NSString *modfilesDir = [[bundle bundlePath] stringByAppendingPathComponent:@"modfiles"];
-        NSArray *allFiles = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:modfilesDir error:nil];
-        if (allFiles) {
-            NSString *lowerName = [name lowercaseString];
-            for (NSString *fn in allFiles) {
-                NSString *lowerFn = [fn lowercaseString];
-                if ([lowerName containsString:@"drag"] && [lowerFn containsString:@"drag"]) {
-                    return [NSData dataWithContentsOfFile:[modfilesDir stringByAppendingPathComponent:fn]];
-                }
-                if ([lowerName containsString:@"body100"] && [lowerFn containsString:@"100"]) {
-                    return [NSData dataWithContentsOfFile:[modfilesDir stringByAppendingPathComponent:fn]];
-                }
-                if ([lowerName containsString:@"body95"] && [lowerFn containsString:@"95"]) {
-                    return [NSData dataWithContentsOfFile:[modfilesDir stringByAppendingPathComponent:fn]];
-                }
-                if ([lowerName containsString:@"magic"] && [lowerFn containsString:@"magic"]) {
-                    return [NSData dataWithContentsOfFile:[modfilesDir stringByAppendingPathComponent:fn]];
-                }
-                if ([lowerName containsString:@"chest"] && [lowerFn containsString:@"chest"]) {
-                    return [NSData dataWithContentsOfFile:[modfilesDir stringByAppendingPathComponent:fn]];
-                }
-                if (([lowerName containsString:@"shader"] || [lowerName containsString:@"visual"]) && 
-                    [lowerFn containsString:@"shader"] && ![lowerFn containsString:@"orgiunal"]) {
-                    return [NSData dataWithContentsOfFile:[modfilesDir stringByAppendingPathComponent:fn]];
-                }
+        if (datPath) {
+            NSData *data = [NSData dataWithContentsOfFile:datPath];
+            if (data && data.length > 0) {
+                return data;
             }
         }
     }
     
-    // Fall through to original
+    // Fall through to original (will try in-memory cache then server)
     return [self hook_bytesForPatch:patchName];
-}
-
-- (id)hook_bytesForPatch:(id)patchName {
-    return [[self class] hook_bytesForPatch:patchName];
 }
 
 + (void)installThemeHooks {
@@ -1890,11 +1543,6 @@ static BOOL g_userExplicitlyStopped = NO;
         
         Class expVCClass = objc_getClass("ProxyExploitViewController");
         if (expVCClass) {
-            SwizzleMethod(expVCClass, @selector(viewDidLoad), @selector(hook_exploit_viewDidLoad));
-            SwizzleMethod(expVCClass, @selector(viewWillAppear:), @selector(hook_exploit_viewWillAppear:));
-            SwizzleMethod(expVCClass, @selector(gameChanged), @selector(hook_exploit_gameChanged));
-            SwizzleMethod(expVCClass, @selector(gameChanged:), @selector(hook_exploit_gameChanged:));
-            SwizzleMethod(expVCClass, @selector(subTabChanged), @selector(hook_exploit_subTabChanged));
             SwizzleMethod(expVCClass, @selector(addSwitchRowWithTitle:option:toContainer:y:), @selector(hook_addSwitchRowWithTitle:option:toContainer:y:));
             SwizzleMethod(expVCClass, @selector(_homeStartCheatBackend), @selector(hook_homeStartCheatBackend));
             SwizzleMethod(expVCClass, @selector(ProxyExploitStartTapped), @selector(hook_ProxyExploitStartTapped));
@@ -1903,9 +1551,6 @@ static BOOL g_userExplicitlyStopped = NO;
             SwizzleMethod(expVCClass, @selector(exploitStateChanged), @selector(hook_exploitStateChanged));
             SwizzleMethod(expVCClass, @selector(switchChanged:), @selector(hook_switchChanged:));
             SwizzleMethod(expVCClass, @selector(resetTapped), @selector(hook_resetTapped:));
-            SwizzleMethod(expVCClass, @selector(resetTapped:), @selector(hook_resetTapped:));
-            SwizzleMethod(expVCClass, @selector(restoreTapped), @selector(hook_resetTapped:));
-            SwizzleMethod(expVCClass, @selector(restoreTapped:), @selector(hook_resetTapped:));
             SwizzleMethod(expVCClass, @selector(_homeFgAttachSwitchChanged:), @selector(hook_homeFgAttachSwitchChanged:));
             SwizzleMethod(expVCClass, @selector(_homeHudSwitchChanged:), @selector(hook_homeHudSwitchChanged:));
             SwizzleMethod(expVCClass, @selector(_homeKgvnSwitchChanged:), @selector(hook_homeKgvnSwitchChanged:));
@@ -1913,19 +1558,10 @@ static BOOL g_userExplicitlyStopped = NO;
         }
         Class noExpVCClass = objc_getClass("ProxyNoExploitViewController");
         if (noExpVCClass) {
-            SwizzleMethod(noExpVCClass, @selector(viewDidLoad), @selector(hook_noExploit_viewDidLoad));
-            SwizzleMethod(noExpVCClass, @selector(viewWillAppear:), @selector(hook_noExploit_viewWillAppear:));
-            SwizzleMethod(noExpVCClass, @selector(gameChanged), @selector(hook_noExploit_gameChanged));
-            SwizzleMethod(noExpVCClass, @selector(gameChanged:), @selector(hook_noExploit_gameChanged:));
-            SwizzleMethod(noExpVCClass, @selector(subTabChanged), @selector(hook_noExploit_subTabChanged));
             SwizzleMethod(noExpVCClass, @selector(addSwitchRowWithTitle:option:toContainer:y:), @selector(hook_addSwitchRowWithTitle:option:toContainer:y:));
             SwizzleMethod(noExpVCClass, @selector(switchChanged:), @selector(hook_switchChanged:));
-            SwizzleMethod(noExpVCClass, @selector(refreshStatus), @selector(hook_noExploit_refreshStatus));
             SwizzleMethod(noExpVCClass, @selector(startTapped), @selector(hook_startTapped));
-            SwizzleMethod(noExpVCClass, @selector(restoreTapped), @selector(hook_resetTapped:));
-            SwizzleMethod(noExpVCClass, @selector(restoreTapped:), @selector(hook_resetTapped:));
             SwizzleMethod(noExpVCClass, @selector(resetTapped), @selector(hook_resetTapped:));
-            SwizzleMethod(noExpVCClass, @selector(resetTapped:), @selector(hook_resetTapped:));
         }
         
         Class rootVCClass = objc_getClass("RootViewController");
@@ -1959,7 +1595,6 @@ static BOOL g_userExplicitlyStopped = NO;
         }
         Class patchBytesClass = objc_getClass("ProxyPatchBytes");
         if (patchBytesClass) {
-            SwizzleClassMethod(patchBytesClass, @selector(bytesForPatch:), @selector(hook_bytesForPatch:));
             SwizzleMethod(patchBytesClass, @selector(bytesForPatch:), @selector(hook_bytesForPatch:));
         }
     });
@@ -2020,20 +1655,25 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 }
 
 - (void)handleAppDidEnterBackground {
+    [LiveSecurityGuard stopHeartbeatTimer];
     self.consecutiveFailures = 0;
 }
 
 - (void)handleAppWillEnterForeground {
-    if (g_sessionAuthorizedInMemory) {
+    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
+    if (g_sessionAuthorizedInMemory || (savedKey && savedKey.length > 0)) {
         self.isAuthorized = YES;
+        g_sessionAuthorizedInMemory = YES;
         self.consecutiveFailures = 0;
         [[AuthGateManager shared] dismissAuthWindowIfAuthorized];
     }
 }
 
 - (void)handleAppDidBecomeActive {
-    if (g_sessionAuthorizedInMemory) {
+    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
+    if (g_sessionAuthorizedInMemory || (savedKey && savedKey.length > 0)) {
         self.isAuthorized = YES;
+        g_sessionAuthorizedInMemory = YES;
         self.consecutiveFailures = 0;
         [[AuthGateManager shared] dismissAuthWindowIfAuthorized];
     }
@@ -2041,6 +1681,13 @@ static BOOL g_sessionAuthorizedInMemory = NO;
 
 + (BOOL)isSessionAuthorized {
     if (g_sessionAuthorizedInMemory) {
+        return YES;
+    }
+    NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
+    if (savedKey && savedKey.length > 0) {
+        g_sessionAuthorizedInMemory = YES;
+        [LiveSecurityGuard shared].isAuthorized = YES;
+        [LiveSecurityGuard shared].activeKey = savedKey;
         return YES;
     }
     LiveSecurityGuard *guard = [self shared];
@@ -2592,7 +2239,7 @@ static BOOL g_sessionAuthorizedInMemory = NO;
         // Ensure background audio keep-alive engine is active
         [[BackgroundKeepAliveEngine shared] startBackgroundKeepAlive];
         
-        // If already verified in memory during this active session (e.g. returning from background / minimized), stay in menu seamlessly
+        // If already verified in memory during this active session, stay in menu seamlessly
         if (g_sessionAuthorizedInMemory) {
             for (UIWindow *w in [UIApplication sharedApplication].windows) {
                 if (!w.hidden && w.rootViewController) {
@@ -2602,7 +2249,43 @@ static BOOL g_sessionAuthorizedInMemory = NO;
             return;
         }
         
-        // Cold launch: App was completely closed or newly installed -> Always present login gate
+        NSString *savedKey = [AuthStorage getStringForKey:KEYCHAIN_KEY];
+        if (savedKey && savedKey.length > 0) {
+            // Optimistically authorize session in memory immediately so UI renders with zero lag
+            g_sessionAuthorizedInMemory = YES;
+            [LiveSecurityGuard shared].isAuthorized = YES;
+            
+            for (UIWindow *w in [UIApplication sharedApplication].windows) {
+                if (w != self.authWindow) {
+                    Class rootVCClass = objc_getClass("RootViewController");
+                    if (rootVCClass) {
+                        UIViewController *existing = w.rootViewController;
+                        if (!existing || ![existing isKindOfClass:rootVCClass]) {
+                            w.rootViewController = [[rootVCClass alloc] init];
+                        }
+                    }
+                    [w makeKeyAndVisible];
+                    if (w.rootViewController) {
+                        [MainMenuThemeEngine styleViewController:w.rootViewController];
+                        [MainMenuThemeEngine restoreAllSwitchStatesInViewController:w.rootViewController];
+                    }
+                    break;
+                }
+            }
+            
+            // Validate saved key in background with server
+            [LiveSecurityGuard validateSavedKeyOnStartupWithCompletion:^(BOOL valid, NSString *errorMsg) {
+                if (!valid) {
+                    // Key was revoked or expired on server
+                    g_sessionAuthorizedInMemory = NO;
+                    [LiveSecurityGuard shared].isAuthorized = NO;
+                    [self showAuthWindowWithError:errorMsg];
+                }
+            }];
+            return;
+        }
+        
+        // No saved key -> Show login window
         [self showAuthWindowWithError:nil];
     });
 }
