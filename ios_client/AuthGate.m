@@ -891,6 +891,8 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
     }
 }
 
+static BOOL g_userExplicitlyStopped = NO;
+
 // ==========================================
 // Core Engine Anti-Bypass Hooks (The Dead Man's Gates)
 // ==========================================
@@ -1305,7 +1307,6 @@ static void SwizzleMethod(Class cls, SEL origSel, SEL newSel) {
 // Live Realtime Security Guard & Heartbeat Engine
 // ==========================================
 static BOOL g_sessionAuthorizedInMemory = NO;
-static BOOL g_userExplicitlyStopped = NO;
 
 @interface LiveSecurityGuard ()
 @property (nonatomic, assign) BOOL isAuthorized;
