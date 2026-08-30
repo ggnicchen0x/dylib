@@ -320,7 +320,7 @@ static void InstallAuthHooks(void) {
             NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
             NSString *responseString = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
             
-            if (httpResponse.statusCode == 200 && responseString && [responseString containsString:@"momo"]) {
+            if (httpResponse.statusCode == 200 && responseString && ([responseString containsString:@"Nicchx"] || [responseString containsString:@"momo"])) {
                 // Store strictly under external.license.key
                 [[NSUserDefaults standardUserDefaults] setObject:key forKey:LICENSE_KEY_STORAGE];
                 [[NSUserDefaults standardUserDefaults] synchronize];
