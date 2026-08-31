@@ -314,13 +314,16 @@ static void InstallAuthHooks(void) {
 + (void)applyVIPThemeToTabBar:(UITabBar *)tabBar {
     if (!tabBar) return;
     
-    // Rename tab items to Home and Mods
-    if (tabBar.items.count >= 2) {
+    // Rename tab items to Home, Mods, and ensure Account is preserved
+    if (tabBar.items.count >= 3) {
         if ([tabBar.items[0].title isEqualToString:@"Exploit"] || tabBar.items[0].title.length == 0) {
             tabBar.items[0].title = @"Home";
         }
         if ([tabBar.items[1].title isEqualToString:@"No Exploit"] || tabBar.items[1].title.length == 0) {
             tabBar.items[1].title = @"Mods";
+        }
+        if (tabBar.items[2].title.length == 0 || [tabBar.items[2].title isEqualToString:@"Account"]) {
+            tabBar.items[2].title = @"Account";
         }
     }
     
