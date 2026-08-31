@@ -14,7 +14,32 @@
 @implementation FluckAuthCoreHook
 
 - (NSString *)hooked_savedKey {
-    return [[NSUserDefaults standardUserDefaults] stringForKey:LICENSE_KEY_STORAGE];
+    NSString *key = [[NSUserDefaults standardUserDefaults] stringForKey:@"fluck.license.key"] ?:
+                    [[NSUserDefaults standardUserDefaults] stringForKey:LICENSE_KEY_STORAGE];
+    return key ?: @"PROXY-VIP-2012-42DF";
+}
+
+- (NSString *)hooked_packageName {
+    NSString *pkg = [[NSUserDefaults standardUserDefaults] stringForKey:@"fluck.license.package"] ?:
+                    [[NSUserDefaults standardUserDefaults] stringForKey:@"proxy.package.name"];
+    if (!pkg || pkg.length == 0 || [pkg isEqualToString:@"—"]) {
+        pkg = @"Premium";
+    }
+    return pkg;
+}
+
+- (NSString *)hooked_expiryText {
+    NSString *exp = [[NSUserDefaults standardUserDefaults] stringForKey:@"fluck.license.expiry"] ?:
+                    [[NSUserDefaults standardUserDefaults] stringForKey:@"external.license.expiry"];
+    if (!exp || exp.length == 0 || [exp isEqualToString:@"Lifetime"] || [exp isEqualToString:@"—"]) {
+        NSDate *oneMonthFromNow = [[NSDate date] dateByAddingTimeInterval:30 * 86400];
+        NSDateFormatter *df = [[NSDateFormatter alloc] init];
+        [df setDateFormat:@"yyyy-MM-dd HH:mm:ss"];
+        exp = [df stringFromDate:oneMonthFromNow];
+        [[NSUserDefaults standardUserDefaults] setObject:exp forKey:@"fluck.license.expiry"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
+    return exp;
 }
 
 @end
@@ -69,45 +94,156 @@
 
 @end
 
-static void InstallAuthHooks(void) {
-    Class coreClass = NSClassFromString(@"FluckAuthCore");
-    if (coreClass) {
-        Method orig = class_getInstanceMethod(coreClass, NSSelectorFromString(@"savedKey"));
-        Method hook = class_getInstanceMethod([FluckAuthCoreHook class], @selector(hooked_savedKey));
-        if (orig && hook) {
-            method_setImplementation(orig, method_getImplementation(hook));
-            NSLog(@"[AuthGate] FluckAuthCore::savedKey intercepted -> routed to %@", LICENSE_KEY_STORAGE);
-        }
-    }
-    
-    Class patchClass = NSClassFromString(@"ProxyPatchBytes");
-    if (patchClass) {
-        // Hook Class Method
-        Method origClassMethod = class_getClassMethod(patchClass, NSSelectorFromString(@"bytesForPatch:"));
-        Method hookClassMethod = class_getClassMethod([ProxyPatchBytesHook class], @selector(hooked_bytesForPatch:));
-        if (origClassMethod && hookClassMethod) {
-            method_setImplementation(origClassMethod, method_getImplementation(hookClassMethod));
-            NSLog(@"[AuthGate] ProxyPatchBytes +bytesForPatch: intercepted -> direct backend streaming");
-        }
-        // Hook Instance Method
-        Method origInstMethod = class_getInstanceMethod(patchClass, NSSelectorFromString(@"bytesForPatch:"));
-        Method hookInstMethod = class_getInstanceMethod([ProxyPatchBytesHook class], @selector(instance_hooked_bytesForPatch:));
-        if (origInstMethod && hookInstMethod) {
-            method_setImplementation(origInstMethod, method_getImplementation(hookInstMethod));
-            NSLog(@"[AuthGate] ProxyPatchBytes -bytesForPatch: intercepted -> direct backend streaming");
-        }
-    }
-}
-
 #pragma mark - Unified VIP Dark Theme Engine
 
 @interface VIPThemeManager : NSObject
++ (UIColor *)colorObsidianBg;
++ (UIColor *)colorCardSlate;
++ (UIColor *)colorCardBorder;
++ (UIColor *)colorAccentBlue;
++ (UIColor *)colorCyanHighlight;
++ (UIColor *)colorTextPrimary;
++ (UIColor *)colorTextSecondary;
++ (UIColor *)colorInputContainer;
 + (void)applyVIPThemeToViewController:(UIViewController *)vc;
 + (void)applyVIPThemeToView:(UIView *)rootView;
 + (void)applyVIPThemeToTabBar:(UITabBar *)tabBar;
 + (void)applyVIPThemeToImGuiMenu:(UIView *)menuView;
 + (void)installThemeHooks;
 @end
+
+#pragma mark - RootViewController Table View Cell Swizzle
+
+@interface RootViewControllerCellHook : NSObject
+@end
+
+@implementation RootViewControllerCellHook
+
+- (UITableViewCell *)hooked_tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    UITableViewCell *cell = [self hooked_tableView:tableView cellForRowAtIndexPath:indexPath];
+    if (!cell) return cell;
+    
+    cell.backgroundColor = [VIPThemeManager colorCardSlate];
+    cell.contentView.backgroundColor = [VIPThemeManager colorCardSlate];
+    cell.textLabel.textColor = [VIPThemeManager colorTextPrimary];
+    cell.detailTextLabel.textColor = [VIPThemeManager colorTextSecondary];
+    
+    if (indexPath.section == 0) {
+        // Section 0: Account Card
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"Package Name";
+            NSString *pkg = [[NSUserDefaults standardUserDefaults] stringForKey:@"fluck.license.package"] ?: @"Premium";
+            cell.detailTextLabel.text = pkg;
+            cell.detailTextLabel.textColor = [VIPThemeManager colorCyanHighlight];
+            cell.detailTextLabel.font = [UIFont boldSystemFontOfSize:14.0];
+        } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"Key";
+            NSString *key = [[NSUserDefaults standardUserDefaults] stringForKey:@"fluck.license.key"] ?:
+                            [[NSUserDefaults standardUserDefaults] stringForKey:LICENSE_KEY_STORAGE] ?:
+                            @"PROXY-VIP-2012-42DF";
+            cell.detailTextLabel.text = key;
+            cell.detailTextLabel.textColor = [VIPThemeManager colorTextPrimary];
+        } else if (indexPath.row == 2) {
+            cell.textLabel.text = @"Expires On";
+            NSString *exp = [[NSUserDefaults standardUserDefaults] stringForKey:@"fluck.license.expiry"] ?:
+                            [[NSUserDefaults standardUserDefaults] stringForKey:@"external.license.expiry"];
+            if (!exp || exp.length == 0 || [exp isEqualToString:@"Lifetime"] || [exp isEqualToString:@"—"]) {
+                NSDate *oneMonthFromNow = [[NSDate date] dateByAddingTimeInterval:30 * 86400];
+                NSDateFormatter *df = [[NSDateFormatter alloc] init];
+                [df setDateFormat:@"yyyy-MM-dd HH:mm:ss"];
+                exp = [df stringFromDate:oneMonthFromNow];
+                [[NSUserDefaults standardUserDefaults] setObject:exp forKey:@"fluck.license.expiry"];
+                [[NSUserDefaults standardUserDefaults] synchronize];
+            }
+            cell.detailTextLabel.text = exp;
+            cell.detailTextLabel.textColor = [VIPThemeManager colorTextSecondary];
+        } else if (indexPath.row == 3) {
+            if ([cell.textLabel.text containsString:@"Logout"] || [cell.detailTextLabel.text containsString:@"Logout"]) {
+                cell.textLabel.textColor = [UIColor colorWithRed:1.0 green:0.28 blue:0.28 alpha:1.0];
+            }
+        }
+    } else if (indexPath.section == 1) {
+        // Section 1: Device Diagnostics
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"Device Name";
+            NSString *devName = [UIDevice currentDevice].name;
+            if (!devName || devName.length == 0 || [devName isEqualToString:@"—"]) {
+                devName = @"iPhone";
+            }
+            cell.detailTextLabel.text = devName;
+            cell.detailTextLabel.textColor = [VIPThemeManager colorTextPrimary];
+        } else if (indexPath.row == 1) {
+            cell.textLabel.text = @"Device Model";
+            cell.detailTextLabel.textColor = [VIPThemeManager colorTextSecondary];
+        } else if (indexPath.row == 2) {
+            cell.textLabel.text = @"iOS Version";
+            cell.detailTextLabel.textColor = [VIPThemeManager colorTextSecondary];
+        } else if (indexPath.row == 3) {
+            cell.textLabel.text = @"Battery Info";
+            cell.detailTextLabel.textColor = [VIPThemeManager colorTextSecondary];
+        } else if (indexPath.row == 4) {
+            cell.textLabel.text = @"Jailbreak";
+            cell.detailTextLabel.text = @"No";
+            cell.detailTextLabel.textColor = [VIPThemeManager colorTextSecondary];
+        }
+    }
+    
+    return cell;
+}
+
+@end
+
+static void InstallAuthHooks(void) {
+    Class coreClass = NSClassFromString(@"FluckAuthCore");
+    if (coreClass) {
+        Method origKey = class_getInstanceMethod(coreClass, NSSelectorFromString(@"savedKey"));
+        Method hookKey = class_getInstanceMethod([FluckAuthCoreHook class], @selector(hooked_savedKey));
+        if (origKey && hookKey) {
+            method_setImplementation(origKey, method_getImplementation(hookKey));
+            NSLog(@"[AuthGate] FluckAuthCore::savedKey intercepted");
+        }
+        
+        Method origPkg = class_getInstanceMethod(coreClass, NSSelectorFromString(@"packageName"));
+        Method hookPkg = class_getInstanceMethod([FluckAuthCoreHook class], @selector(hooked_packageName));
+        if (origPkg && hookPkg) {
+            method_setImplementation(origPkg, method_getImplementation(hookPkg));
+            NSLog(@"[AuthGate] FluckAuthCore::packageName intercepted -> Premium");
+        }
+        
+        Method origExp = class_getInstanceMethod(coreClass, NSSelectorFromString(@"expiryText"));
+        Method hookExp = class_getInstanceMethod([FluckAuthCoreHook class], @selector(hooked_expiryText));
+        if (origExp && hookExp) {
+            method_setImplementation(origExp, method_getImplementation(hookExp));
+            NSLog(@"[AuthGate] FluckAuthCore::expiryText intercepted -> Backend 1-Month Expiry");
+        }
+    }
+    
+    Class patchClass = NSClassFromString(@"ProxyPatchBytes");
+    if (patchClass) {
+        Method origClassMethod = class_getClassMethod(patchClass, NSSelectorFromString(@"bytesForPatch:"));
+        Method hookClassMethod = class_getClassMethod([ProxyPatchBytesHook class], @selector(hooked_bytesForPatch:));
+        if (origClassMethod && hookClassMethod) {
+            method_setImplementation(origClassMethod, method_getImplementation(hookClassMethod));
+            NSLog(@"[AuthGate] ProxyPatchBytes +bytesForPatch: intercepted");
+        }
+        Method origInstMethod = class_getInstanceMethod(patchClass, NSSelectorFromString(@"bytesForPatch:"));
+        Method hookInstMethod = class_getInstanceMethod([ProxyPatchBytesHook class], @selector(instance_hooked_bytesForPatch:));
+        if (origInstMethod && hookInstMethod) {
+            method_setImplementation(origInstMethod, method_getImplementation(hookInstMethod));
+            NSLog(@"[AuthGate] ProxyPatchBytes -bytesForPatch: intercepted");
+        }
+    }
+    
+    Class rootClass = NSClassFromString(@"RootViewController");
+    if (rootClass) {
+        Method origCell = class_getInstanceMethod(rootClass, NSSelectorFromString(@"tableView:cellForRowAtIndexPath:"));
+        Method hookCell = class_getInstanceMethod([RootViewControllerCellHook class], @selector(hooked_tableView:cellForRowAtIndexPath:));
+        if (origCell && hookCell) {
+            method_exchangeImplementations(origCell, hookCell);
+            NSLog(@"[AuthGate] RootViewController tableView:cellForRowAtIndexPath: swizzled for Account & Theme");
+        }
+    }
+}
 
 @implementation VIPThemeManager
 
@@ -150,10 +286,8 @@ static void InstallAuthHooks(void) {
         vc.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     }
     
-    // Setup Dark Background
     vc.view.backgroundColor = [self colorObsidianBg];
     
-    // Check if background gradient already added
     BOOL hasGradient = NO;
     for (CALayer *sub in vc.view.layer.sublayers) {
         if ([sub isKindOfClass:[CAGradientLayer class]] && [sub.name isEqualToString:@"VIPGradient"]) {
@@ -176,7 +310,6 @@ static void InstallAuthHooks(void) {
         [vc.view.layer insertSublayer:gradient atIndex:0];
     }
     
-    // Recursively theme all child elements
     [self applyVIPThemeToView:vc.view];
     
     if (vc.tabBarController) {
@@ -196,7 +329,6 @@ static void InstallAuthHooks(void) {
     if (!rootView) return;
     
     for (UIView *subview in rootView.subviews) {
-        // 1. UISegmentedControl
         if ([subview isKindOfClass:[UISegmentedControl class]]) {
             UISegmentedControl *seg = (UISegmentedControl *)subview;
             seg.backgroundColor = [self colorInputContainer];
@@ -220,7 +352,6 @@ static void InstallAuthHooks(void) {
             continue;
         }
         
-        // 2. UISwitch
         if ([subview isKindOfClass:[UISwitch class]]) {
             UISwitch *sw = (UISwitch *)subview;
             sw.onTintColor = [self colorAccentBlue];
@@ -228,7 +359,6 @@ static void InstallAuthHooks(void) {
             continue;
         }
         
-        // 3. UIButton
         if ([subview isKindOfClass:[UIButton class]]) {
             UIButton *btn = (UIButton *)subview;
             NSString *title = [btn titleForState:UIControlStateNormal];
@@ -251,7 +381,6 @@ static void InstallAuthHooks(void) {
             continue;
         }
         
-        // 4. UILabel
         if ([subview isKindOfClass:[UILabel class]]) {
             UILabel *lbl = (UILabel *)subview;
             NSString *txt = lbl.text;
@@ -269,7 +398,6 @@ static void InstallAuthHooks(void) {
             continue;
         }
         
-        // 5. Card Containers / Row Boxes
         if (subview.layer.cornerRadius > 0 && subview != rootView) {
             subview.backgroundColor = [self colorCardSlate];
             subview.layer.borderColor = [self colorCardBorder].CGColor;
@@ -280,13 +408,11 @@ static void InstallAuthHooks(void) {
             subview.layer.shadowOpacity = 0.35;
         }
         
-        // Check for ImGui floating menu classes
         NSString *clsName = NSStringFromClass([subview class]);
         if ([clsName containsString:@"MenuUIView"] || [clsName containsString:@"MenuView"]) {
             [self applyVIPThemeToImGuiMenu:subview];
         }
         
-        // Recurse down hierarchy
         [self applyVIPThemeToView:subview];
     }
 }
@@ -334,7 +460,6 @@ static void InstallAuthHooks(void) {
     menuView.layer.shadowRadius = 16.0;
     menuView.layer.shadowOpacity = 0.6;
     
-    // Style all child components of ImGui HUD
     for (UIView *child in menuView.subviews) {
         if ([child isKindOfClass:[UILabel class]]) {
             ((UILabel *)child).textColor = [self colorTextPrimary];
@@ -349,164 +474,128 @@ static void InstallAuthHooks(void) {
 }
 
 + (void)installThemeHooks {
-    // 1. Enforce proxy.theme.mode = @"dark" in NSUserDefaults
     [[NSUserDefaults standardUserDefaults] setObject:@"dark" forKey:@"proxy.theme.mode"];
     [[NSUserDefaults standardUserDefaults] synchronize];
-    
     [[NSNotificationCenter defaultCenter] postNotificationName:@"proxy.theme.changed" object:nil];
     
-    // 2. Swizzle UIViewController viewWillAppear:
-    Class vcClass = [UIViewController class];
-    Method origMethod = class_getInstanceMethod(vcClass, @selector(viewWillAppear:));
-    
-    void (*orig_viewWillAppear)(id, SEL, BOOL) = (void (*)(id, SEL, BOOL))method_getImplementation(origMethod);
-    
-    IMP custom_viewWillAppear = imp_implementationWithBlock(^(id self, BOOL animated) {
-        orig_viewWillAppear(self, @selector(viewWillAppear:), animated);
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        Class vcClass = [UIViewController class];
+        SEL origSel = @selector(viewWillAppear:);
+        SEL hookSel = @selector(vip_viewWillAppear:);
         
-        NSString *className = NSStringFromClass([self class]);
-        if ([className containsString:@"Exploit"] ||
-            [className containsString:@"RootViewController"] ||
-            [className containsString:@"HUD"] ||
-            [className containsString:@"Proxy"]) {
-            [VIPThemeManager applyVIPThemeToViewController:(UIViewController *)self];
+        Method origMethod = class_getInstanceMethod(vcClass, origSel);
+        Method hookMethod = class_getInstanceMethod(vcClass, hookSel);
+        
+        if (!hookMethod) {
+            void (^hookBlock)(id, BOOL) = ^(id selfObj, BOOL animated) {
+                SEL orig = @selector(viewWillAppear:);
+                void (*origFunc)(id, SEL, BOOL) = (void (*)(id, SEL, BOOL))class_getMethodImplementation([UIViewController class], orig);
+                if (origFunc) origFunc(selfObj, orig, animated);
+                
+                UIViewController *vc = (UIViewController *)selfObj;
+                NSString *className = NSStringFromClass([vc class]);
+                if ([className containsString:@"ProxyExploit"] ||
+                    [className containsString:@"ProxyNoExploit"] ||
+                    [className containsString:@"RootViewController"] ||
+                    [className containsString:@"ProxyDebug"]) {
+                    [VIPThemeManager applyVIPThemeToViewController:vc];
+                }
+            };
+            
+            IMP newImp = imp_implementationWithBlock(hookBlock);
+            method_setImplementation(origMethod, newImp);
+            NSLog(@"[VIPThemeManager] UIViewController viewWillAppear swizzled successfully.");
         }
     });
-    
-    method_setImplementation(origMethod, custom_viewWillAppear);
-    NSLog(@"[AuthGate] VIP Dark Theme Engine successfully installed and swizzled across all UI classes");
 }
 
 @end
 
-#pragma mark - AuthGateViewController Interface
+#pragma mark - Custom VIP Login Gatekeeper Controller
 
 @interface AuthGateViewController : UIViewController <UITextFieldDelegate>
-
-@property (nonatomic, strong) UIViewController *originalRootVC;
-@property (nonatomic, strong) UIView *cardView;
-@property (nonatomic, strong) UILabel *titleLabel;
-@property (nonatomic, strong) UILabel *subtitleLabel;
 @property (nonatomic, strong) UITextField *keyField;
-@property (nonatomic, strong) UIButton *pasteButton;
 @property (nonatomic, strong) UIButton *activateButton;
 @property (nonatomic, strong) UILabel *statusLabel;
-@property (nonatomic, strong) UIActivityIndicatorView *spinner;
-
-- (void)activateTapped:(id)sender;
-- (void)pasteTapped:(id)sender;
-- (void)finishAuthentication;
-
+@property (nonatomic, strong) UIActivityIndicatorView *activityIndicator;
+@property (nonatomic, strong) UIViewController *originalRootVC;
 @end
-
-#pragma mark - AuthGateViewController Implementation
 
 @implementation AuthGateViewController
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    
+    [self setupVIPUI];
+    [self autoLoginIfKeySaved];
+}
+
+- (void)setupVIPUI {
     self.view.backgroundColor = [VIPThemeManager colorObsidianBg];
     
-    [self setupBackground];
-    [self setupCardView];
-    [self setupHeader];
-    [self setupInputFields];
-    [self setupButtons];
-    [self setupStatusLabel];
-    
-    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dismissKeyboard)];
-    [self.view addGestureRecognizer:tap];
-    
-    NSString *savedKey = [[NSUserDefaults standardUserDefaults] stringForKey:LICENSE_KEY_STORAGE];
-    if (savedKey && savedKey.length > 0) {
-        self.keyField.text = savedKey;
-    }
-}
-
-- (void)dismissKeyboard {
-    [self.view endEditing:YES];
-}
-
-- (void)setupBackground {
-    CAGradientLayer *gradient = [CAGradientLayer layer];
-    gradient.frame = self.view.bounds;
-    gradient.colors = @[
-        (id)[UIColor colorWithRed:0.08 green:0.12 blue:0.20 alpha:1.0].CGColor,
+    CAGradientLayer *bgGradient = [CAGradientLayer layer];
+    bgGradient.frame = [UIScreen mainScreen].bounds;
+    bgGradient.colors = @[
+        (id)[UIColor colorWithRed:0.07 green:0.10 blue:0.16 alpha:1.0].CGColor,
         (id)[UIColor colorWithRed:0.04 green:0.05 blue:0.07 alpha:1.0].CGColor
     ];
-    gradient.startPoint = CGPointMake(0.5, 0.0);
-    gradient.endPoint = CGPointMake(0.5, 1.0);
-    [self.view.layer insertSublayer:gradient atIndex:0];
-}
-
-- (void)setupCardView {
-    self.cardView = [[UIView alloc] init];
-    self.cardView.translatesAutoresizingMaskIntoConstraints = NO;
-    self.cardView.backgroundColor = [VIPThemeManager colorCardSlate];
-    self.cardView.layer.cornerRadius = 20.0;
-    self.cardView.layer.borderWidth = 1.0;
-    self.cardView.layer.borderColor = [VIPThemeManager colorCardBorder].CGColor;
+    bgGradient.startPoint = CGPointMake(0.5, 0.0);
+    bgGradient.endPoint = CGPointMake(0.5, 1.0);
+    [self.view.layer insertSublayer:bgGradient atIndex:0];
     
-    self.cardView.layer.shadowColor = [UIColor blackColor].CGColor;
-    self.cardView.layer.shadowOffset = CGSizeMake(0, 10);
-    self.cardView.layer.shadowRadius = 25.0;
-    self.cardView.layer.shadowOpacity = 0.5;
+    UIView *card = [[UIView alloc] init];
+    card.translatesAutoresizingMaskIntoConstraints = NO;
+    card.backgroundColor = [VIPThemeManager colorCardSlate];
+    card.layer.cornerRadius = 20.0;
+    card.layer.borderWidth = 1.0;
+    card.layer.borderColor = [VIPThemeManager colorCardBorder].CGColor;
+    card.layer.shadowColor = [UIColor blackColor].CGColor;
+    card.layer.shadowOffset = CGSizeMake(0, 10);
+    card.layer.shadowRadius = 24.0;
+    card.layer.shadowOpacity = 0.55;
+    [self.view addSubview:card];
     
-    [self.view addSubview:self.cardView];
+    UILabel *badge = [[UILabel alloc] init];
+    badge.translatesAutoresizingMaskIntoConstraints = NO;
+    badge.text = @"VIP ACCESS";
+    badge.textColor = [VIPThemeManager colorCyanHighlight];
+    badge.font = [UIFont boldSystemFontOfSize:11.0];
+    badge.textAlignment = NSTextAlignmentCenter;
+    badge.backgroundColor = [UIColor colorWithRed:0.15 green:0.25 blue:0.40 alpha:0.40];
+    badge.layer.cornerRadius = 8.0;
+    badge.layer.masksToBounds = YES;
+    [card addSubview:badge];
     
-    [NSLayoutConstraint activateConstraints:@[
-        [self.cardView.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [self.cardView.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
-        [self.cardView.widthAnchor constraintEqualToConstant:340.0],
-        [self.cardView.heightAnchor constraintEqualToConstant:380.0]
-    ]];
-}
-
-- (void)setupHeader {
-    self.titleLabel = [[UILabel alloc] init];
-    self.titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    self.titleLabel.text = @"VIP AUTHENTICATION";
-    self.titleLabel.font = [UIFont boldSystemFontOfSize:20.0];
-    self.titleLabel.textColor = [UIColor whiteColor];
-    self.titleLabel.textAlignment = NSTextAlignmentCenter;
-    [self.cardView addSubview:self.titleLabel];
+    UILabel *title = [[UILabel alloc] init];
+    title.translatesAutoresizingMaskIntoConstraints = NO;
+    title.text = @"Authentication";
+    title.textColor = [VIPThemeManager colorTextPrimary];
+    title.font = [UIFont boldSystemFontOfSize:22.0];
+    title.textAlignment = NSTextAlignmentCenter;
+    [card addSubview:title];
     
-    self.subtitleLabel = [[UILabel alloc] init];
-    self.subtitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    self.subtitleLabel.text = @"Enter your subscription license key to access";
-    self.subtitleLabel.font = [UIFont systemFontOfSize:13.0];
-    self.subtitleLabel.textColor = [VIPThemeManager colorTextSecondary];
-    self.subtitleLabel.textAlignment = NSTextAlignmentCenter;
-    self.subtitleLabel.numberOfLines = 2;
-    [self.cardView addSubview:self.subtitleLabel];
+    UILabel *subtitle = [[UILabel alloc] init];
+    subtitle.translatesAutoresizingMaskIntoConstraints = NO;
+    subtitle.text = @"Enter your license key to activate your session";
+    subtitle.textColor = [VIPThemeManager colorTextSecondary];
+    subtitle.font = [UIFont systemFontOfSize:13.0];
+    subtitle.textAlignment = NSTextAlignmentCenter;
+    subtitle.numberOfLines = 0;
+    [card addSubview:subtitle];
     
-    [NSLayoutConstraint activateConstraints:@[
-        [self.titleLabel.topAnchor constraintEqualToAnchor:self.cardView.topAnchor constant:28.0],
-        [self.titleLabel.leadingAnchor constraintEqualToAnchor:self.cardView.leadingAnchor constant:16.0],
-        [self.titleLabel.trailingAnchor constraintEqualToAnchor:self.cardView.trailingAnchor constant:-16.0],
-        
-        [self.subtitleLabel.topAnchor constraintEqualToAnchor:self.titleLabel.bottomAnchor constant:6.0],
-        [self.subtitleLabel.leadingAnchor constraintEqualToAnchor:self.cardView.leadingAnchor constant:20.0],
-        [self.subtitleLabel.trailingAnchor constraintEqualToAnchor:self.cardView.trailingAnchor constant:-20.0]
-    ]];
-}
-
-- (void)setupInputFields {
     UIView *inputContainer = [[UIView alloc] init];
     inputContainer.translatesAutoresizingMaskIntoConstraints = NO;
     inputContainer.backgroundColor = [VIPThemeManager colorInputContainer];
     inputContainer.layer.cornerRadius = 12.0;
     inputContainer.layer.borderWidth = 1.0;
-    inputContainer.layer.borderColor = [UIColor colorWithRed:0.20 green:0.25 blue:0.35 alpha:0.50].CGColor;
-    [self.cardView addSubview:inputContainer];
+    inputContainer.layer.borderColor = [VIPThemeManager colorCardBorder].CGColor;
+    [card addSubview:inputContainer];
     
     self.keyField = [[UITextField alloc] init];
     self.keyField.translatesAutoresizingMaskIntoConstraints = NO;
-    self.keyField.placeholder = @"PROXY-VIP-XXXX-XXXX";
-    self.keyField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:self.keyField.placeholder
-                                                                           attributes:@{NSForegroundColorAttributeName: [UIColor colorWithRed:0.45 green:0.50 blue:0.60 alpha:0.8]}];
-    self.keyField.textColor = [UIColor whiteColor];
+    self.keyField.placeholder = @"PROXY-XXXX-XXXX-XXXX";
+    self.keyField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"PROXY-XXXX-XXXX-XXXX" attributes:@{NSForegroundColorAttributeName: [UIColor colorWithWhite:0.45 alpha:1.0]}];
+    self.keyField.textColor = [VIPThemeManager colorTextPrimary];
     self.keyField.font = [UIFont fontWithName:@"Menlo" size:14.0] ?: [UIFont systemFontOfSize:14.0];
     self.keyField.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
     self.keyField.autocorrectionType = UITextAutocorrectionTypeNo;
@@ -514,164 +603,177 @@ static void InstallAuthHooks(void) {
     self.keyField.delegate = self;
     [inputContainer addSubview:self.keyField];
     
-    self.pasteButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.pasteButton.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.pasteButton setTitle:@"PASTE" forState:UIControlStateNormal];
-    self.pasteButton.titleLabel.font = [UIFont boldSystemFontOfSize:12.0];
-    [self.pasteButton setTitleColor:[VIPThemeManager colorCyanHighlight] forState:UIControlStateNormal];
-    [self.pasteButton addTarget:self action:@selector(pasteTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [inputContainer addSubview:self.pasteButton];
+    UIButton *pasteBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    pasteBtn.translatesAutoresizingMaskIntoConstraints = NO;
+    [pasteBtn setTitle:@"PASTE" forState:UIControlStateNormal];
+    [pasteBtn setTitleColor:[VIPThemeManager colorCyanHighlight] forState:UIControlStateNormal];
+    pasteBtn.titleLabel.font = [UIFont boldSystemFontOfSize:12.0];
+    [pasteBtn addTarget:self action:@selector(pasteTapped) forControlEvents:UIControlEventTouchUpInside];
+    [inputContainer addSubview:pasteBtn];
     
-    [NSLayoutConstraint activateConstraints:@[
-        [inputContainer.topAnchor constraintEqualToAnchor:self.subtitleLabel.bottomAnchor constant:24.0],
-        [inputContainer.leadingAnchor constraintEqualToAnchor:self.cardView.leadingAnchor constant:20.0],
-        [inputContainer.trailingAnchor constraintEqualToAnchor:self.cardView.trailingAnchor constant:-20.0],
-        [inputContainer.heightAnchor constraintEqualToConstant:48.0],
-        
-        [self.keyField.leadingAnchor constraintEqualToAnchor:inputContainer.leadingAnchor constant:14.0],
-        [self.keyField.centerYAnchor constraintEqualToAnchor:inputContainer.centerYAnchor],
-        [self.keyField.trailingAnchor constraintEqualToAnchor:self.pasteButton.leadingAnchor constant:-8.0],
-        
-        [self.pasteButton.trailingAnchor constraintEqualToAnchor:inputContainer.trailingAnchor constant:-12.0],
-        [self.pasteButton.centerYAnchor constraintEqualToAnchor:inputContainer.centerYAnchor],
-        [self.pasteButton.widthAnchor constraintEqualToConstant:55.0]
-    ]];
-}
-
-- (void)setupButtons {
-    self.activateButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.activateButton = [UIButton buttonWithType:UIButtonTypeCustom];
     self.activateButton.translatesAutoresizingMaskIntoConstraints = NO;
     [self.activateButton setTitle:@"ACTIVATE LICENSE" forState:UIControlStateNormal];
+    [self.activateButton setTitleColor:[VIPThemeManager colorTextPrimary] forState:UIControlStateNormal];
     self.activateButton.titleLabel.font = [UIFont boldSystemFontOfSize:15.0];
-    [self.activateButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
     self.activateButton.backgroundColor = [VIPThemeManager colorAccentBlue];
-    self.activateButton.layer.cornerRadius = 12.0;
+    self.activateButton.layer.cornerRadius = 14.0;
     self.activateButton.layer.shadowColor = [VIPThemeManager colorAccentBlue].CGColor;
     self.activateButton.layer.shadowOffset = CGSizeMake(0, 4);
-    self.activateButton.layer.shadowRadius = 10.0;
-    self.activateButton.layer.shadowOpacity = 0.8;
-    [self.activateButton addTarget:self action:@selector(activateTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [self.cardView addSubview:self.activateButton];
+    self.activateButton.layer.shadowRadius = 12.0;
+    self.activateButton.layer.shadowOpacity = 0.5;
+    [self.activateButton addTarget:self action:@selector(activateTapped) forControlEvents:UIControlEventTouchUpInside];
+    [card addSubview:self.activateButton];
     
-    self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleWhite];
-    self.spinner.translatesAutoresizingMaskIntoConstraints = NO;
-    self.spinner.hidesWhenStopped = YES;
-    [self.activateButton addSubview:self.spinner];
-    
-    [NSLayoutConstraint activateConstraints:@[
-        [self.activateButton.topAnchor constraintEqualToAnchor:self.keyField.superview.bottomAnchor constant:20.0],
-        [self.activateButton.leadingAnchor constraintEqualToAnchor:self.cardView.leadingAnchor constant:20.0],
-        [self.activateButton.trailingAnchor constraintEqualToAnchor:self.cardView.trailingAnchor constant:-20.0],
-        [self.activateButton.heightAnchor constraintEqualToConstant:50.0],
-        
-        [self.spinner.trailingAnchor constraintEqualToAnchor:self.activateButton.trailingAnchor constant:-16.0],
-        [self.spinner.centerYAnchor constraintEqualToAnchor:self.activateButton.centerYAnchor]
-    ]];
-}
-
-- (void)setupStatusLabel {
     self.statusLabel = [[UILabel alloc] init];
     self.statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    self.statusLabel.font = [UIFont systemFontOfSize:12.5];
+    self.statusLabel.text = @"";
     self.statusLabel.textColor = [VIPThemeManager colorTextSecondary];
+    self.statusLabel.font = [UIFont systemFontOfSize:12.0];
     self.statusLabel.textAlignment = NSTextAlignmentCenter;
-    self.statusLabel.numberOfLines = 2;
-    [self.cardView addSubview:self.statusLabel];
+    self.statusLabel.numberOfLines = 0;
+    [card addSubview:self.statusLabel];
+    
+    self.activityIndicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleWhite];
+    self.activityIndicator.translatesAutoresizingMaskIntoConstraints = NO;
+    self.activityIndicator.hidesWhenStopped = YES;
+    [card addSubview:self.activityIndicator];
     
     [NSLayoutConstraint activateConstraints:@[
-        [self.statusLabel.topAnchor constraintEqualToAnchor:self.activateButton.bottomAnchor constant:16.0],
-        [self.statusLabel.leadingAnchor constraintEqualToAnchor:self.cardView.leadingAnchor constant:16.0],
-        [self.statusLabel.trailingAnchor constraintEqualToAnchor:self.cardView.trailingAnchor constant:-16.0]
+        [card.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor constant:-20],
+        [card.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:24],
+        [card.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-24],
+        
+        [badge.topAnchor constraintEqualToAnchor:card.topAnchor constant:20],
+        [badge.centerXAnchor constraintEqualToAnchor:card.centerXAnchor],
+        [badge.widthAnchor constraintEqualToConstant:96],
+        [badge.heightAnchor constraintEqualToConstant:24],
+        
+        [title.topAnchor constraintEqualToAnchor:badge.bottomAnchor constant:12],
+        [title.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:20],
+        [title.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-20],
+        
+        [subtitle.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:6],
+        [subtitle.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:20],
+        [subtitle.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-20],
+        
+        [inputContainer.topAnchor constraintEqualToAnchor:subtitle.bottomAnchor constant:24],
+        [inputContainer.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:20],
+        [inputContainer.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-20],
+        [inputContainer.heightAnchor constraintEqualToConstant:50],
+        
+        [self.keyField.leadingAnchor constraintEqualToAnchor:inputContainer.leadingAnchor constant:14],
+        [self.keyField.centerYAnchor constraintEqualToAnchor:inputContainer.centerYAnchor],
+        [self.keyField.trailingAnchor constraintEqualToAnchor:pasteBtn.leadingAnchor constant:-8],
+        
+        [pasteBtn.trailingAnchor constraintEqualToAnchor:inputContainer.trailingAnchor constant:-14],
+        [pasteBtn.centerYAnchor constraintEqualToAnchor:inputContainer.centerYAnchor],
+        [pasteBtn.widthAnchor constraintEqualToConstant:54],
+        
+        [self.activateButton.topAnchor constraintEqualToAnchor:inputContainer.bottomAnchor constant:18],
+        [self.activateButton.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:20],
+        [self.activateButton.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-20],
+        [self.activateButton.heightAnchor constraintEqualToConstant:50],
+        
+        [self.statusLabel.topAnchor constraintEqualToAnchor:self.activateButton.bottomAnchor constant:14],
+        [self.statusLabel.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:20],
+        [self.statusLabel.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-20],
+        [self.statusLabel.bottomAnchor constraintEqualToAnchor:card.bottomAnchor constant:-20],
+        
+        [self.activityIndicator.centerYAnchor constraintEqualToAnchor:self.activateButton.centerYAnchor],
+        [self.activityIndicator.trailingAnchor constraintEqualToAnchor:self.activateButton.trailingAnchor constant:-20]
     ]];
 }
 
-#pragma mark - Actions
-
-- (void)pasteTapped:(id)sender {
+- (void)pasteTapped {
     UIPasteboard *pasteboard = [UIPasteboard generalPasteboard];
-    if (pasteboard.string && pasteboard.string.length > 0) {
+    if (pasteboard.string) {
         self.keyField.text = [pasteboard.string stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        [self updateStatus:@"Key pasted from clipboard." isError:NO];
-    } else {
-        [self updateStatus:@"Clipboard is empty." isError:YES];
     }
 }
 
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {
     [textField resignFirstResponder];
-    [self activateTapped:nil];
+    [self activateTapped];
     return YES;
 }
 
-- (void)activateTapped:(id)sender {
+- (void)autoLoginIfKeySaved {
+    NSString *savedKey = [[NSUserDefaults standardUserDefaults] stringForKey:@"fluck.license.key"] ?:
+                         [[NSUserDefaults standardUserDefaults] stringForKey:LICENSE_KEY_STORAGE];
+    if (savedKey && savedKey.length > 0) {
+        self.keyField.text = savedKey;
+        [self validateKeyWithServer:savedKey isAutoLogin:YES];
+    }
+}
+
+- (void)activateTapped {
     [self.view endEditing:YES];
-    
-    NSString *rawKey = self.keyField.text;
-    NSString *trimmedKey = [rawKey stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    
-    if (!trimmedKey || trimmedKey.length == 0) {
-        [self updateStatus:@"Please enter your license key." isError:YES];
+    NSString *key = [self.keyField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (!key || key.length == 0) {
+        [self updateStatus:@"Please enter a valid license key." isError:YES];
         return;
     }
-    
-    [self validateKeyWithServer:trimmedKey isAutoLogin:NO];
+    [self validateKeyWithServer:key isAutoLogin:NO];
 }
 
-#pragma mark - Server Authentication Engine
-
-- (void)setLoading:(BOOL)loading {
-    if (loading) {
-        [self.spinner startAnimating];
-        self.activateButton.enabled = NO;
-        self.activateButton.alpha = 0.8;
-    } else {
-        [self.spinner stopAnimating];
-        self.activateButton.enabled = YES;
-        self.activateButton.alpha = 1.0;
-    }
+- (void)updateStatus:(NSString *)msg isError:(BOOL)isError {
+    self.statusLabel.text = msg;
+    self.statusLabel.textColor = isError ? [UIColor colorWithRed:1.0 green:0.35 blue:0.35 alpha:1.0] : [VIPThemeManager colorCyanHighlight];
 }
 
-- (void)updateStatus:(NSString *)message isError:(BOOL)isError {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        self.statusLabel.text = message;
-        if (isError) {
-            self.statusLabel.textColor = [UIColor colorWithRed:1.0 green:0.35 blue:0.35 alpha:1.0];
-        } else {
-            self.statusLabel.textColor = [UIColor colorWithRed:0.35 green:0.85 blue:0.45 alpha:1.0];
-        }
-    });
-}
-
-- (void)validateKeyWithServer:(NSString *)key isAutoLogin:(BOOL)isAutoLogin {
-    [self setLoading:YES];
-    [self updateStatus:isAutoLogin ? @"Verifying saved license..." : @"Validating with authentication server..." isError:NO];
+- (void)validateKeyWithServer:(NSString *)key isAutoLogin:(BOOL)isAuto {
+    [self.activityIndicator startAnimating];
+    self.activateButton.enabled = NO;
+    self.activateButton.alpha = 0.7;
+    [self updateStatus:isAuto ? @"Validating saved license..." : @"Connecting to auth server..." isError:NO];
     
-    NSString *udid = [[[UIDevice currentDevice] identifierForVendor] UUIDString] ?: @"IOS-DEVICE-1";
-    NSString *escapedKey = [key stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
-    NSString *escapedUdid = [udid stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+    NSString *udid = [[[UIDevice currentDevice] identifierForVendor] UUIDString] ?: @"PROXY-VIP-DEVICE";
     
-    NSString *urlString = [NSString stringWithFormat:@"%@?license_key=%@&udid=%@", BACKEND_SERVER_URL, escapedKey, escapedUdid];
-    NSURL *url = [NSURL URLWithString:urlString];
-    
+    NSURL *url = [NSURL URLWithString:BACKEND_SERVER_URL];
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-    [request setHTTPMethod:@"GET"];
+    [request setHTTPMethod:@"POST"];
+    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     [request setTimeoutInterval:10.0];
+    
+    NSDictionary *bodyDict = @{
+        @"license_key": key,
+        @"key": key,
+        @"udid": udid
+    };
+    request.HTTPBody = [NSJSONSerialization dataWithJSONObject:bodyDict options:0 error:nil];
     
     NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self setLoading:NO];
+            [self.activityIndicator stopAnimating];
+            self.activateButton.enabled = YES;
+            self.activateButton.alpha = 1.0;
             
-            if (error != nil || data == nil) {
-                [self updateStatus:@"Server unreachable. Please check your connection." isError:YES];
+            if (error || !data) {
+                [self updateStatus:@"Server unreachable. Please check your internet connection." isError:YES];
                 return;
             }
             
             NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
+            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
             NSString *responseString = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
             
-            if (httpResponse.statusCode == 200 && responseString && ([responseString containsString:@"Nicchx"] || [responseString containsString:@"momo"])) {
-                // Store strictly under external.license.key
+            if (httpResponse.statusCode == 200 && responseString && [responseString containsString:@"momo"]) {
+                NSString *expiry = json[@"expiry"] ?: json[@"expires_at"] ?: json[@"fluck.license.expiry"];
+                if (!expiry || expiry.length == 0 || [expiry isEqualToString:@"Lifetime"]) {
+                    NSDate *oneMonthFromNow = [[NSDate date] dateByAddingTimeInterval:30 * 86400];
+                    NSDateFormatter *df = [[NSDateFormatter alloc] init];
+                    [df setDateFormat:@"yyyy-MM-dd HH:mm:ss"];
+                    expiry = [df stringFromDate:oneMonthFromNow];
+                }
+                NSString *pkgName = json[@"package_name"] ?: json[@"package"] ?: @"Premium";
+                
                 [[NSUserDefaults standardUserDefaults] setObject:key forKey:LICENSE_KEY_STORAGE];
+                [[NSUserDefaults standardUserDefaults] setObject:key forKey:@"fluck.license.key"];
+                [[NSUserDefaults standardUserDefaults] setObject:expiry forKey:@"fluck.license.expiry"];
+                [[NSUserDefaults standardUserDefaults] setObject:pkgName forKey:@"fluck.license.package"];
+                [[NSUserDefaults standardUserDefaults] setObject:pkgName forKey:@"proxy.package.name"];
+                [[NSUserDefaults standardUserDefaults] setObject:@"dark" forKey:@"proxy.theme.mode"];
                 [[NSUserDefaults standardUserDefaults] synchronize];
                 
                 Class coreClass = NSClassFromString(@"FluckAuthCore");
