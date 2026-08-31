@@ -99,6 +99,286 @@ static void InstallAuthHooks(void) {
     }
 }
 
+#pragma mark - Unified VIP Dark Theme Engine
+
+@interface VIPThemeManager : NSObject
++ (void)applyVIPThemeToViewController:(UIViewController *)vc;
++ (void)applyVIPThemeToView:(UIView *)rootView;
++ (void)applyVIPThemeToTabBar:(UITabBar *)tabBar;
++ (void)applyVIPThemeToImGuiMenu:(UIView *)menuView;
++ (void)installThemeHooks;
+@end
+
+@implementation VIPThemeManager
+
++ (UIColor *)colorObsidianBg {
+    return [UIColor colorWithRed:0.06 green:0.07 blue:0.09 alpha:0.98];
+}
+
++ (UIColor *)colorCardSlate {
+    return [UIColor colorWithRed:0.11 green:0.13 blue:0.18 alpha:0.95];
+}
+
++ (UIColor *)colorCardBorder {
+    return [UIColor colorWithRed:0.22 green:0.28 blue:0.40 alpha:0.60];
+}
+
++ (UIColor *)colorAccentBlue {
+    return [UIColor colorWithRed:0.20 green:0.50 blue:0.95 alpha:1.0];
+}
+
++ (UIColor *)colorCyanHighlight {
+    return [UIColor colorWithRed:0.35 green:0.65 blue:1.0 alpha:1.0];
+}
+
++ (UIColor *)colorTextPrimary {
+    return [UIColor whiteColor];
+}
+
++ (UIColor *)colorTextSecondary {
+    return [UIColor colorWithRed:0.60 green:0.65 blue:0.75 alpha:1.0];
+}
+
++ (UIColor *)colorInputContainer {
+    return [UIColor colorWithRed:0.07 green:0.08 blue:0.12 alpha:0.95];
+}
+
++ (void)applyVIPThemeToViewController:(UIViewController *)vc {
+    if (!vc || !vc.isViewLoaded) return;
+    
+    if (@available(iOS 13.0, *)) {
+        vc.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    }
+    
+    // Setup Dark Background
+    vc.view.backgroundColor = [self colorObsidianBg];
+    
+    // Check if background gradient already added
+    BOOL hasGradient = NO;
+    for (CALayer *sub in vc.view.layer.sublayers) {
+        if ([sub isKindOfClass:[CAGradientLayer class]] && [sub.name isEqualToString:@"VIPGradient"]) {
+            hasGradient = YES;
+            sub.frame = vc.view.bounds;
+            break;
+        }
+    }
+    
+    if (!hasGradient) {
+        CAGradientLayer *gradient = [CAGradientLayer layer];
+        gradient.name = @"VIPGradient";
+        gradient.frame = vc.view.bounds;
+        gradient.colors = @[
+            (id)[UIColor colorWithRed:0.08 green:0.12 blue:0.20 alpha:1.0].CGColor,
+            (id)[UIColor colorWithRed:0.04 green:0.05 blue:0.07 alpha:1.0].CGColor
+        ];
+        gradient.startPoint = CGPointMake(0.5, 0.0);
+        gradient.endPoint = CGPointMake(0.5, 1.0);
+        [vc.view.layer insertSublayer:gradient atIndex:0];
+    }
+    
+    // Recursively theme all child elements
+    [self applyVIPThemeToView:vc.view];
+    
+    if (vc.tabBarController) {
+        [self applyVIPThemeToTabBar:vc.tabBarController.tabBar];
+    }
+    if (vc.navigationController) {
+        vc.navigationController.navigationBar.barTintColor = [self colorObsidianBg];
+        vc.navigationController.navigationBar.tintColor = [self colorAccentBlue];
+        vc.navigationController.navigationBar.titleTextAttributes = @{
+            NSForegroundColorAttributeName: [self colorTextPrimary],
+            NSFontAttributeName: [UIFont boldSystemFontOfSize:18.0]
+        };
+    }
+}
+
++ (void)applyVIPThemeToView:(UIView *)rootView {
+    if (!rootView) return;
+    
+    for (UIView *subview in rootView.subviews) {
+        // 1. UISegmentedControl
+        if ([subview isKindOfClass:[UISegmentedControl class]]) {
+            UISegmentedControl *seg = (UISegmentedControl *)subview;
+            seg.backgroundColor = [self colorInputContainer];
+            if (@available(iOS 13.0, *)) {
+                seg.selectedSegmentTintColor = [self colorAccentBlue];
+            }
+            seg.layer.cornerRadius = 10.0;
+            seg.layer.borderWidth = 1.0;
+            seg.layer.borderColor = [self colorCardBorder].CGColor;
+            seg.clipsToBounds = YES;
+            
+            [seg setTitleTextAttributes:@{
+                NSForegroundColorAttributeName: [self colorTextSecondary],
+                NSFontAttributeName: [UIFont systemFontOfSize:13.0]
+            } forState:UIControlStateNormal];
+            
+            [seg setTitleTextAttributes:@{
+                NSForegroundColorAttributeName: [self colorTextPrimary],
+                NSFontAttributeName: [UIFont boldSystemFontOfSize:13.0]
+            } forState:UIControlStateSelected];
+            continue;
+        }
+        
+        // 2. UISwitch
+        if ([subview isKindOfClass:[UISwitch class]]) {
+            UISwitch *sw = (UISwitch *)subview;
+            sw.onTintColor = [self colorAccentBlue];
+            sw.thumbTintColor = [UIColor whiteColor];
+            continue;
+        }
+        
+        // 3. UIButton
+        if ([subview isKindOfClass:[UIButton class]]) {
+            UIButton *btn = (UIButton *)subview;
+            NSString *title = [btn titleForState:UIControlStateNormal];
+            
+            if ([title isEqualToString:@"STOP"] || [title isEqualToString:@"START"]) {
+                btn.backgroundColor = [self colorAccentBlue];
+                [btn setTitleColor:[self colorTextPrimary] forState:UIControlStateNormal];
+                btn.layer.cornerRadius = 10.0;
+                btn.layer.shadowColor = [self colorAccentBlue].CGColor;
+                btn.layer.shadowOffset = CGSizeMake(0, 3);
+                btn.layer.shadowRadius = 8.0;
+                btn.layer.shadowOpacity = 0.5;
+            } else if ([title isEqualToString:@"Reset"] || [title containsString:@"Reset"]) {
+                btn.backgroundColor = [self colorCardSlate];
+                [btn setTitleColor:[self colorCyanHighlight] forState:UIControlStateNormal];
+                btn.layer.cornerRadius = 10.0;
+                btn.layer.borderWidth = 1.0;
+                btn.layer.borderColor = [self colorCardBorder].CGColor;
+            }
+            continue;
+        }
+        
+        // 4. UILabel
+        if ([subview isKindOfClass:[UILabel class]]) {
+            UILabel *lbl = (UILabel *)subview;
+            NSString *txt = lbl.text;
+            if (txt && (
+                [txt containsString:@"sandbox escaped"] ||
+                [txt containsString:@"patch bytes"] ||
+                [txt containsString:@"unavailable"] ||
+                [txt containsString:@"server/key"] ||
+                [txt containsString:@"Enter your"]
+            )) {
+                lbl.textColor = [self colorTextSecondary];
+            } else {
+                lbl.textColor = [self colorTextPrimary];
+            }
+            continue;
+        }
+        
+        // 5. Card Containers / Row Boxes
+        if (subview.layer.cornerRadius > 0 && subview != rootView) {
+            subview.backgroundColor = [self colorCardSlate];
+            subview.layer.borderColor = [self colorCardBorder].CGColor;
+            subview.layer.borderWidth = 1.0;
+            subview.layer.shadowColor = [UIColor blackColor].CGColor;
+            subview.layer.shadowOffset = CGSizeMake(0, 4);
+            subview.layer.shadowRadius = 8.0;
+            subview.layer.shadowOpacity = 0.35;
+        }
+        
+        // Check for ImGui floating menu classes
+        NSString *clsName = NSStringFromClass([subview class]);
+        if ([clsName containsString:@"MenuUIView"] || [clsName containsString:@"MenuView"]) {
+            [self applyVIPThemeToImGuiMenu:subview];
+        }
+        
+        // Recurse down hierarchy
+        [self applyVIPThemeToView:subview];
+    }
+}
+
++ (void)applyVIPThemeToTabBar:(UITabBar *)tabBar {
+    if (!tabBar) return;
+    
+    tabBar.barTintColor = [self colorObsidianBg];
+    tabBar.backgroundColor = [self colorObsidianBg];
+    tabBar.tintColor = [self colorAccentBlue];
+    tabBar.unselectedItemTintColor = [self colorTextSecondary];
+    
+    if (@available(iOS 13.0, *)) {
+        UITabBarAppearance *appearance = [[UITabBarAppearance alloc] init];
+        [appearance configureWithOpaqueBackground];
+        appearance.backgroundColor = [self colorObsidianBg];
+        
+        appearance.stackedLayoutAppearance.selected.iconColor = [self colorAccentBlue];
+        appearance.stackedLayoutAppearance.selected.titleTextAttributes = @{
+            NSForegroundColorAttributeName: [self colorAccentBlue],
+            NSFontAttributeName: [UIFont boldSystemFontOfSize:11.0]
+        };
+        appearance.stackedLayoutAppearance.normal.iconColor = [self colorTextSecondary];
+        appearance.stackedLayoutAppearance.normal.titleTextAttributes = @{
+            NSForegroundColorAttributeName: [self colorTextSecondary],
+            NSFontAttributeName: [UIFont systemFontOfSize:11.0]
+        };
+        
+        tabBar.standardAppearance = appearance;
+        if (@available(iOS 15.0, *)) {
+            tabBar.scrollEdgeAppearance = appearance;
+        }
+    }
+}
+
++ (void)applyVIPThemeToImGuiMenu:(UIView *)menuView {
+    if (!menuView) return;
+    
+    menuView.backgroundColor = [self colorCardSlate];
+    menuView.layer.cornerRadius = 16.0;
+    menuView.layer.borderWidth = 1.0;
+    menuView.layer.borderColor = [self colorCardBorder].CGColor;
+    menuView.layer.shadowColor = [UIColor blackColor].CGColor;
+    menuView.layer.shadowOffset = CGSizeMake(0, 8);
+    menuView.layer.shadowRadius = 16.0;
+    menuView.layer.shadowOpacity = 0.6;
+    
+    // Style all child components of ImGui HUD
+    for (UIView *child in menuView.subviews) {
+        if ([child isKindOfClass:[UILabel class]]) {
+            ((UILabel *)child).textColor = [self colorTextPrimary];
+        } else if ([child isKindOfClass:[UISwitch class]]) {
+            ((UISwitch *)child).onTintColor = [self colorAccentBlue];
+        } else if ([child isKindOfClass:[UISlider class]]) {
+            UISlider *sl = (UISlider *)child;
+            sl.minimumTrackTintColor = [self colorAccentBlue];
+            sl.thumbTintColor = [UIColor whiteColor];
+        }
+    }
+}
+
++ (void)installThemeHooks {
+    // 1. Enforce proxy.theme.mode = @"dark" in NSUserDefaults
+    [[NSUserDefaults standardUserDefaults] setObject:@"dark" forKey:@"proxy.theme.mode"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"proxy.theme.changed" object:nil];
+    
+    // 2. Swizzle UIViewController viewWillAppear:
+    Class vcClass = [UIViewController class];
+    Method origMethod = class_getInstanceMethod(vcClass, @selector(viewWillAppear:));
+    
+    void (*orig_viewWillAppear)(id, SEL, BOOL) = (void (*)(id, SEL, BOOL))method_getImplementation(origMethod);
+    
+    IMP custom_viewWillAppear = imp_implementationWithBlock(^(id self, BOOL animated) {
+        orig_viewWillAppear(self, @selector(viewWillAppear:), animated);
+        
+        NSString *className = NSStringFromClass([self class]);
+        if ([className containsString:@"Exploit"] ||
+            [className containsString:@"RootViewController"] ||
+            [className containsString:@"HUD"] ||
+            [className containsString:@"Proxy"]) {
+            [VIPThemeManager applyVIPThemeToViewController:(UIViewController *)self];
+        }
+    });
+    
+    method_setImplementation(origMethod, custom_viewWillAppear);
+    NSLog(@"[AuthGate] VIP Dark Theme Engine successfully installed and swizzled across all UI classes");
+}
+
+@end
+
 #pragma mark - AuthGateViewController Interface
 
 @interface AuthGateViewController : UIViewController <UITextFieldDelegate>
@@ -126,7 +406,7 @@ static void InstallAuthHooks(void) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     
-    self.view.backgroundColor = [UIColor colorWithRed:0.06 green:0.07 blue:0.09 alpha:0.98];
+    self.view.backgroundColor = [VIPThemeManager colorObsidianBg];
     
     [self setupBackground];
     [self setupCardView];
@@ -163,10 +443,10 @@ static void InstallAuthHooks(void) {
 - (void)setupCardView {
     self.cardView = [[UIView alloc] init];
     self.cardView.translatesAutoresizingMaskIntoConstraints = NO;
-    self.cardView.backgroundColor = [UIColor colorWithRed:0.11 green:0.13 blue:0.18 alpha:0.95];
+    self.cardView.backgroundColor = [VIPThemeManager colorCardSlate];
     self.cardView.layer.cornerRadius = 20.0;
     self.cardView.layer.borderWidth = 1.0;
-    self.cardView.layer.borderColor = [UIColor colorWithRed:0.22 green:0.28 blue:0.40 alpha:0.60].CGColor;
+    self.cardView.layer.borderColor = [VIPThemeManager colorCardBorder].CGColor;
     
     self.cardView.layer.shadowColor = [UIColor blackColor].CGColor;
     self.cardView.layer.shadowOffset = CGSizeMake(0, 10);
@@ -196,7 +476,7 @@ static void InstallAuthHooks(void) {
     self.subtitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
     self.subtitleLabel.text = @"Enter your subscription license key to access";
     self.subtitleLabel.font = [UIFont systemFontOfSize:13.0];
-    self.subtitleLabel.textColor = [UIColor colorWithRed:0.60 green:0.65 blue:0.75 alpha:1.0];
+    self.subtitleLabel.textColor = [VIPThemeManager colorTextSecondary];
     self.subtitleLabel.textAlignment = NSTextAlignmentCenter;
     self.subtitleLabel.numberOfLines = 2;
     [self.cardView addSubview:self.subtitleLabel];
@@ -215,7 +495,7 @@ static void InstallAuthHooks(void) {
 - (void)setupInputFields {
     UIView *inputContainer = [[UIView alloc] init];
     inputContainer.translatesAutoresizingMaskIntoConstraints = NO;
-    inputContainer.backgroundColor = [UIColor colorWithRed:0.07 green:0.08 blue:0.12 alpha:0.95];
+    inputContainer.backgroundColor = [VIPThemeManager colorInputContainer];
     inputContainer.layer.cornerRadius = 12.0;
     inputContainer.layer.borderWidth = 1.0;
     inputContainer.layer.borderColor = [UIColor colorWithRed:0.20 green:0.25 blue:0.35 alpha:0.50].CGColor;
@@ -238,7 +518,7 @@ static void InstallAuthHooks(void) {
     self.pasteButton.translatesAutoresizingMaskIntoConstraints = NO;
     [self.pasteButton setTitle:@"PASTE" forState:UIControlStateNormal];
     self.pasteButton.titleLabel.font = [UIFont boldSystemFontOfSize:12.0];
-    [self.pasteButton setTitleColor:[UIColor colorWithRed:0.35 green:0.65 blue:1.0 alpha:1.0] forState:UIControlStateNormal];
+    [self.pasteButton setTitleColor:[VIPThemeManager colorCyanHighlight] forState:UIControlStateNormal];
     [self.pasteButton addTarget:self action:@selector(pasteTapped:) forControlEvents:UIControlEventTouchUpInside];
     [inputContainer addSubview:self.pasteButton];
     
@@ -264,9 +544,9 @@ static void InstallAuthHooks(void) {
     [self.activateButton setTitle:@"ACTIVATE LICENSE" forState:UIControlStateNormal];
     self.activateButton.titleLabel.font = [UIFont boldSystemFontOfSize:15.0];
     [self.activateButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    self.activateButton.backgroundColor = [UIColor colorWithRed:0.20 green:0.50 blue:0.95 alpha:1.0];
+    self.activateButton.backgroundColor = [VIPThemeManager colorAccentBlue];
     self.activateButton.layer.cornerRadius = 12.0;
-    self.activateButton.layer.shadowColor = [UIColor colorWithRed:0.20 green:0.50 blue:0.95 alpha:0.4].CGColor;
+    self.activateButton.layer.shadowColor = [VIPThemeManager colorAccentBlue].CGColor;
     self.activateButton.layer.shadowOffset = CGSizeMake(0, 4);
     self.activateButton.layer.shadowRadius = 10.0;
     self.activateButton.layer.shadowOpacity = 0.8;
@@ -293,7 +573,7 @@ static void InstallAuthHooks(void) {
     self.statusLabel = [[UILabel alloc] init];
     self.statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
     self.statusLabel.font = [UIFont systemFontOfSize:12.5];
-    self.statusLabel.textColor = [UIColor colorWithRed:0.60 green:0.65 blue:0.75 alpha:1.0];
+    self.statusLabel.textColor = [VIPThemeManager colorTextSecondary];
     self.statusLabel.textAlignment = NSTextAlignmentCenter;
     self.statusLabel.numberOfLines = 2;
     [self.cardView addSubview:self.statusLabel];
@@ -431,6 +711,7 @@ static void InstallAuthHooks(void) {
         UIWindow *window = [UIApplication sharedApplication].keyWindow ?: [UIApplication sharedApplication].windows.firstObject;
         if (self.originalRootVC) {
             window.rootViewController = self.originalRootVC;
+            [VIPThemeManager applyVIPThemeToViewController:self.originalRootVC];
         } else if (self.presentingViewController) {
             [self dismissViewControllerAnimated:NO completion:nil];
         }
@@ -469,6 +750,7 @@ static void AuthGateInitialize(void) {
     NSLog(@"[AuthGate] Dynamic Library Loaded Successfully");
     
     InstallAuthHooks();
+    [VIPThemeManager installThemeHooks];
     
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
                                                       object:nil
