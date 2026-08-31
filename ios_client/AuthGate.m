@@ -183,6 +183,22 @@ static void InstallAuthHooks(void) {
     // Recursively theme all child elements
     [self applyVIPThemeToView:vc.view];
     
+    // Apply tab and navigation bar titles
+    NSString *className = NSStringFromClass([vc class]);
+    if ([className containsString:@"NoExploit"]) {
+        vc.title = @"Mods";
+        vc.navigationItem.title = @"Mods";
+        if (vc.tabBarItem) {
+            vc.tabBarItem.title = @"Mods";
+        }
+    } else if ([className containsString:@"Exploit"]) {
+        vc.title = @"Home";
+        vc.navigationItem.title = @"Home";
+        if (vc.tabBarItem) {
+            vc.tabBarItem.title = @"Home";
+        }
+    }
+    
     if (vc.tabBarController) {
         [self applyVIPThemeToTabBar:vc.tabBarController.tabBar];
     }
@@ -297,6 +313,16 @@ static void InstallAuthHooks(void) {
 
 + (void)applyVIPThemeToTabBar:(UITabBar *)tabBar {
     if (!tabBar) return;
+    
+    // Rename tab items to Home and Mods
+    if (tabBar.items.count >= 2) {
+        if ([tabBar.items[0].title isEqualToString:@"Exploit"] || tabBar.items[0].title.length == 0) {
+            tabBar.items[0].title = @"Home";
+        }
+        if ([tabBar.items[1].title isEqualToString:@"No Exploit"] || tabBar.items[1].title.length == 0) {
+            tabBar.items[1].title = @"Mods";
+        }
+    }
     
     tabBar.barTintColor = [self colorObsidianBg];
     tabBar.backgroundColor = [self colorObsidianBg];
