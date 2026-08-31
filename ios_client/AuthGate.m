@@ -109,6 +109,7 @@ static void InstallAuthHooks(void) {
 + (void)applyVIPThemeToView:(UIView *)rootView;
 + (void)applyVIPThemeToTabBar:(UITabBar *)tabBar;
 + (void)applyVIPThemeToImGuiMenu:(UIView *)menuView;
++ (void)removeModChestFromViewController:(UIViewController *)vc;
 + (void)installThemeHooks;
 @end
 
@@ -351,6 +352,113 @@ static void InstallAuthHooks(void) {
     }
 }
 
++ (void)removeModChestFromViewController:(UIViewController *)vc {
+    if (!vc || !vc.isViewLoaded) return;
+    
+    // Only process Exploit / NoExploit VCs
+    NSString *className = NSStringFromClass([vc class]);
+    if (![className containsString:@"Exploit"]) return;
+    
+    // Use tag 99887 to avoid double-processing
+    static NSInteger kModChestProcessedTag = 99887;
+    if (vc.view.tag == kModChestProcessedTag) return;
+    
+    // Find the scroll view (first UIScrollView child)
+    UIScrollView *scrollView = nil;
+    for (UIView *child in vc.view.subviews) {
+        if ([child isKindOfClass:[UIScrollView class]]) {
+            scrollView = (UIScrollView *)child;
+            break;
+        }
+    }
+    if (!scrollView) return;
+    
+    // Scan for ModChest row: a container view with a UILabel that says "ModChest"
+    UIView *modChestRow = nil;
+    CGFloat modChestHeight = 0;
+    
+    for (UIView *row in scrollView.subviews) {
+        if (row.hidden) continue;
+        for (UIView *child in row.subviews) {
+            if ([child isKindOfClass:[UILabel class]]) {
+                UILabel *lbl = (UILabel *)child;
+                if ([lbl.text isEqualToString:@"ModChest"]) {
+                    modChestRow = row;
+                    modChestHeight = row.frame.size.height + 8.0; // row + spacing
+                    break;
+                }
+            }
+        }
+        if (modChestRow) break;
+    }
+    
+    if (!modChestRow) return;
+    
+    CGFloat modChestY = modChestRow.frame.origin.y;
+    
+    // Hide the ModChest row
+    modChestRow.hidden = YES;
+    modChestRow.frame = CGRectZero;
+    
+    // Shift everything below ModChest's Y position upward
+    for (UIView *sibling in scrollView.subviews) {
+        if (sibling == modChestRow || sibling.hidden) continue;
+        if (sibling.frame.origin.y > modChestY) {
+            CGRect f = sibling.frame;
+            f.origin.y -= modChestHeight;
+            sibling.frame = f;
+        }
+    }
+    
+    // Also check aim/visuals containers for ModChest rows
+    for (UIView *container in scrollView.subviews) {
+        if (container.hidden || [container isKindOfClass:[UILabel class]] ||
+            [container isKindOfClass:[UIButton class]] ||
+            [container isKindOfClass:[UIScrollView class]]) continue;
+        
+        UIView *innerModChest = nil;
+        CGFloat innerY = 0;
+        CGFloat innerH = 0;
+        
+        for (UIView *row in container.subviews) {
+            if (row.hidden) continue;
+            for (UIView *child in row.subviews) {
+                if ([child isKindOfClass:[UILabel class]]) {
+                    UILabel *lbl = (UILabel *)child;
+                    if ([lbl.text isEqualToString:@"ModChest"]) {
+                        innerModChest = row;
+                        innerY = row.frame.origin.y;
+                        innerH = row.frame.size.height + 8.0;
+                        break;
+                    }
+                }
+            }
+            if (innerModChest) break;
+        }
+        
+        if (innerModChest) {
+            innerModChest.hidden = YES;
+            innerModChest.frame = CGRectZero;
+            for (UIView *row in container.subviews) {
+                if (row == innerModChest || row.hidden) continue;
+                if (row.frame.origin.y > innerY) {
+                    CGRect f = row.frame;
+                    f.origin.y -= innerH;
+                    row.frame = f;
+                }
+            }
+        }
+    }
+    
+    // Shrink content size
+    CGSize cs = scrollView.contentSize;
+    cs.height -= modChestHeight;
+    scrollView.contentSize = cs;
+    
+    vc.view.tag = kModChestProcessedTag;
+    NSLog(@"[AuthGate] ModChest row removed from %@, shifted Reset/Status up by %.0fpt", className, modChestHeight);
+}
+
 + (void)installThemeHooks {
     // 1. Enforce proxy.theme.mode = @"dark" in NSUserDefaults
     [[NSUserDefaults standardUserDefaults] setObject:@"dark" forKey:@"proxy.theme.mode"];
@@ -373,6 +481,7 @@ static void InstallAuthHooks(void) {
             [className containsString:@"HUD"] ||
             [className containsString:@"Proxy"]) {
             [VIPThemeManager applyVIPThemeToViewController:(UIViewController *)self];
+            [VIPThemeManager removeModChestFromViewController:(UIViewController *)self];
         }
     });
     
