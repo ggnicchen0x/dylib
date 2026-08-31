@@ -539,7 +539,7 @@ static void InstallAuthHooks(void) {
     
     self.keyField = [[UITextField alloc] init];
     self.keyField.translatesAutoresizingMaskIntoConstraints = NO;
-    self.keyField.placeholder = @"PROXY-VIP-XXXX-XXXX";
+    self.keyField.placeholder = @"EFF-XXXX-XXXX-XXXX";
     self.keyField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:self.keyField.placeholder
                                                                            attributes:@{NSForegroundColorAttributeName: [UIColor colorWithRed:0.45 green:0.50 blue:0.60 alpha:0.8]}];
     self.keyField.textColor = [UIColor whiteColor];
