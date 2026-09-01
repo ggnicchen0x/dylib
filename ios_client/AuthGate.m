@@ -20,6 +20,53 @@ static NSString *const kEmbeddedExternalLogoBase64 = @"iVBORw0KGgoAAAANSUhEUgAAA
     return [[NSUserDefaults standardUserDefaults] stringForKey:LICENSE_KEY_STORAGE];
 }
 
+- (NSString *)hooked_packageName {
+    return @"External";
+}
+
+- (NSString *)hooked_expiryText {
+    NSString *exp = [[NSUserDefaults standardUserDefaults] stringForKey:@"external.license.expiry"];
+    if (!exp || exp.length == 0) {
+        exp = [[NSUserDefaults standardUserDefaults] stringForKey:@"fluck.license.expiry"];
+    }
+    return (exp && exp.length > 0) ? exp : @"Active";
+}
+
+- (BOOL)hooked_gatePassed {
+    NSString *key = [[NSUserDefaults standardUserDefaults] stringForKey:LICENSE_KEY_STORAGE];
+    return (key && key.length > 0);
+}
+
+- (void)hooked_revokeGateWithReason:(id)reason {
+    NSLog(@"[AuthGate] Neutralized legacy revokeGateWithReason: %@", reason);
+}
+
+- (void)hooked_revokeAndDie:(id)r label:(id)l {
+    NSLog(@"[AuthGate] Neutralized legacy revokeAndDie");
+}
+
+- (void)hooked_failAndDie:(id)reason {
+    NSLog(@"[AuthGate] Neutralized legacy failAndDie: %@", reason);
+}
+
+- (void)hooked_startKeyWatchdog {
+    // Disabled in favor of SessionSecurityManager
+}
+
+- (void)hooked_startHeartbeat {
+    // Disabled in favor of SessionSecurityManager
+}
+
+- (void)hooked_startPulse {
+    // Disabled in favor of SessionSecurityManager
+}
+
+- (void)hooked_checkPackageWithCompletion:(void (^)(BOOL, id, id))completion {
+    if (completion) {
+        completion(YES, nil, nil);
+    }
+}
+
 @end
 
 @interface ProxyPatchBytesHook : NSObject
@@ -72,33 +119,46 @@ static NSString *const kEmbeddedExternalLogoBase64 = @"iVBORw0KGgoAAAANSUhEUgAAA
 
 @end
 
+static void SwizzleInstance(Class targetClass, SEL origSel, Class hookClass, SEL hookSel) {
+    if (!targetClass || !hookClass) return;
+    Method orig = class_getInstanceMethod(targetClass, origSel);
+    Method hook = class_getInstanceMethod(hookClass, hookSel);
+    if (orig && hook) {
+        method_setImplementation(orig, method_getImplementation(hook));
+    }
+}
+
+static void SwizzleClassMethod(Class targetClass, SEL origSel, Class hookClass, SEL hookSel) {
+    if (!targetClass || !hookClass) return;
+    Method orig = class_getClassMethod(targetClass, origSel);
+    Method hook = class_getClassMethod(hookClass, hookSel);
+    if (orig && hook) {
+        method_setImplementation(orig, method_getImplementation(hook));
+    }
+}
+
 static void InstallAuthHooks(void) {
     Class coreClass = NSClassFromString(@"FluckAuthCore");
     if (coreClass) {
-        Method orig = class_getInstanceMethod(coreClass, NSSelectorFromString(@"savedKey"));
-        Method hook = class_getInstanceMethod([FluckAuthCoreHook class], @selector(hooked_savedKey));
-        if (orig && hook) {
-            method_setImplementation(orig, method_getImplementation(hook));
-            NSLog(@"[AuthGate] FluckAuthCore::savedKey intercepted -> routed to %@", LICENSE_KEY_STORAGE);
-        }
+        SwizzleInstance(coreClass, NSSelectorFromString(@"savedKey"), [FluckAuthCoreHook class], @selector(hooked_savedKey));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"packageName"), [FluckAuthCoreHook class], @selector(hooked_packageName));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"expiryText"), [FluckAuthCoreHook class], @selector(hooked_expiryText));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"gatePassed"), [FluckAuthCoreHook class], @selector(hooked_gatePassed));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"revokeGateWithReason:"), [FluckAuthCoreHook class], @selector(hooked_revokeGateWithReason:));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"revokeAndDie:label:"), [FluckAuthCoreHook class], @selector(hooked_revokeAndDie:label:));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"failAndDie:"), [FluckAuthCoreHook class], @selector(hooked_failAndDie:));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"startKeyWatchdog"), [FluckAuthCoreHook class], @selector(hooked_startKeyWatchdog));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"startHeartbeat"), [FluckAuthCoreHook class], @selector(hooked_startHeartbeat));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"startPulse"), [FluckAuthCoreHook class], @selector(hooked_startPulse));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"checkPackageWithCompletion:"), [FluckAuthCoreHook class], @selector(hooked_checkPackageWithCompletion:));
+        NSLog(@"[AuthGate] FluckAuthCore complete runtime swizzles installed successfully");
     }
     
     Class patchClass = NSClassFromString(@"ProxyPatchBytes");
     if (patchClass) {
-        // Hook Class Method
-        Method origClassMethod = class_getClassMethod(patchClass, NSSelectorFromString(@"bytesForPatch:"));
-        Method hookClassMethod = class_getClassMethod([ProxyPatchBytesHook class], @selector(hooked_bytesForPatch:));
-        if (origClassMethod && hookClassMethod) {
-            method_setImplementation(origClassMethod, method_getImplementation(hookClassMethod));
-            NSLog(@"[AuthGate] ProxyPatchBytes +bytesForPatch: intercepted -> direct backend streaming");
-        }
-        // Hook Instance Method
-        Method origInstMethod = class_getInstanceMethod(patchClass, NSSelectorFromString(@"bytesForPatch:"));
-        Method hookInstMethod = class_getInstanceMethod([ProxyPatchBytesHook class], @selector(instance_hooked_bytesForPatch:));
-        if (origInstMethod && hookInstMethod) {
-            method_setImplementation(origInstMethod, method_getImplementation(hookInstMethod));
-            NSLog(@"[AuthGate] ProxyPatchBytes -bytesForPatch: intercepted -> direct backend streaming");
-        }
+        SwizzleClassMethod(patchClass, NSSelectorFromString(@"bytesForPatch:"), [ProxyPatchBytesHook class], @selector(hooked_bytesForPatch:));
+        SwizzleInstance(patchClass, NSSelectorFromString(@"bytesForPatch:"), [ProxyPatchBytesHook class], @selector(instance_hooked_bytesForPatch:));
+        NSLog(@"[AuthGate] ProxyPatchBytes live streaming swizzles installed successfully");
     }
 }
 
