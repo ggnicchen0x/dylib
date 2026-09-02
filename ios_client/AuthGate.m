@@ -77,7 +77,12 @@ static NSString *const kEmbeddedExternalLogoBase64 = @"iVBORw0KGgoAAAANSUhEUgAAA
 + (NSData *)hooked_bytesForPatch:(NSString *)patchName {
     if (!patchName || patchName.length == 0) return nil;
     
-    NSString *escapedPatch = [patchName stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+    NSString *effectivePatch = patchName;
+    if ([patchName isEqualToString:@"cache_drag"] || [patchName isEqualToString:@"drag"]) {
+        effectivePatch = @"avatar_drag";
+    }
+    
+    NSString *escapedPatch = [effectivePatch stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
     NSString *urlString = [NSString stringWithFormat:@"%@?patch=%@", BACKEND_BYTES_URL, escapedPatch];
     NSURL *url = [NSURL URLWithString:urlString];
     
