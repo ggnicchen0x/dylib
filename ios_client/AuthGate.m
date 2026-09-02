@@ -127,6 +127,46 @@ static NSString *const kEmbeddedExternalLogoBase64 = @"iVBORw0KGgoAAAANSUhEUgAAA
 
 @end
 
+@interface ProxyExploitViewControllerHook : NSObject
+@end
+
+@implementation ProxyExploitViewControllerHook
+
+- (NSString *)hooked_shadersPathForBundleID:(NSString *)bundleID {
+    typedef NSString *(*OrigDocsFunc)(id, SEL, NSString *);
+    SEL docsSel = NSSelectorFromString(@"documentsPathForBundleID:");
+    Method m = class_getInstanceMethod([self class], docsSel);
+    NSString *docs = nil;
+    if (m) {
+        OrigDocsFunc func = (OrigDocsFunc)method_getImplementation(m);
+        docs = func(self, docsSel, bundleID);
+    }
+    if (!docs || docs.length == 0) {
+        return nil;
+    }
+    
+    NSString *avatarDir = [docs stringByAppendingPathComponent:@"contentcache/Optional/ios/gameassetbundles/avatar"];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if (![fm fileExistsAtPath:avatarDir]) {
+        [fm createDirectoryAtPath:avatarDir withIntermediateDirectories:YES attributes:nil error:nil];
+    }
+    
+    NSString *targetFile = [avatarDir stringByAppendingPathComponent:@"assetindexer.PENojQAQf9a1l6Dzjs0n1Z3rtVU~3D"];
+    NSLog(@"[AuthGate] Resolved Avatar Drag target path: %@", targetFile);
+    return targetFile;
+}
+
+- (NSString *)hooked_shaderBackupPathForBundleID:(NSString *)bundleID {
+    NSString *target = [self hooked_shadersPathForBundleID:bundleID];
+    return target ? [target stringByAppendingString:@".bak"] : nil;
+}
+
+- (NSString *)hooked_backupPathForBundleID:(NSString *)bundleID {
+    return [self hooked_shaderBackupPathForBundleID:bundleID];
+}
+
+@end
+
 static void SwizzleInstance(Class targetClass, SEL origSel, Class hookClass, SEL hookSel) {
     if (!targetClass || !hookClass) return;
     Method orig = class_getInstanceMethod(targetClass, origSel);
@@ -167,6 +207,14 @@ static void InstallAuthHooks(void) {
         SwizzleClassMethod(patchClass, NSSelectorFromString(@"bytesForPatch:"), [ProxyPatchBytesHook class], @selector(hooked_bytesForPatch:));
         SwizzleInstance(patchClass, NSSelectorFromString(@"bytesForPatch:"), [ProxyPatchBytesHook class], @selector(instance_hooked_bytesForPatch:));
         NSLog(@"[AuthGate] ProxyPatchBytes live streaming swizzles installed successfully");
+    }
+    
+    Class exploitVCClass = NSClassFromString(@"ProxyExploitViewController");
+    if (exploitVCClass) {
+        SwizzleInstance(exploitVCClass, NSSelectorFromString(@"shadersPathForBundleID:"), [ProxyExploitViewControllerHook class], @selector(hooked_shadersPathForBundleID:));
+        SwizzleInstance(exploitVCClass, NSSelectorFromString(@"shaderBackupPathForBundleID:"), [ProxyExploitViewControllerHook class], @selector(hooked_shaderBackupPathForBundleID:));
+        SwizzleInstance(exploitVCClass, NSSelectorFromString(@"backupPathForBundleID:"), [ProxyExploitViewControllerHook class], @selector(hooked_backupPathForBundleID:));
+        NSLog(@"[AuthGate] ProxyExploitViewController avatar path routing swizzles installed successfully");
     }
 }
 
