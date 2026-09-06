@@ -429,7 +429,7 @@ static const NSUInteger kCandidateSubpathsCount = 10;
     BOOL isStale = NO;
     NSError *resError = nil;
     NSURL *resolvedURL = [NSURL URLByResolvingBookmarkData:bookmarkData
-                                                   options:NSURLBookmarkResolutionWithSecurityScope
+                                                   options:0
                                              relativeToURL:nil
                                        bookmarkDataIsStale:&isStale
                                                      error:&resError];
@@ -1340,17 +1340,18 @@ static const NSUInteger kCandidateSubpathsCount = 10;
     
     // The ModChest row lives inside aimContainer (or directly in scrollView)
     // We need to find it at any nesting depth within the scrollView
-    __block UIView *modChestRow = nil;
-    __block UIView *modChestParent = nil;
-    __block CGFloat rowHeight = 0;
+    UIView *modChestRow = nil;
+    UIView *modChestParent = nil;
+    CGFloat rowHeight = 0;
     
-    // Recursive block to find ModChest row
-    void (^__block findModChest)(UIView *parent);
-    findModChest = ^(UIView *parent) {
-        if (modChestRow) return; // already found
+    // Find ModChest row using non-capturing traversal
+    NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:scrollView];
+    while (queue.count > 0 && !modChestRow) {
+        UIView *parent = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        
         for (UIView *child in parent.subviews) {
             if (child.hidden) continue;
-            // Check if this view contains a UILabel with "ModChest"
             for (UIView *sub in child.subviews) {
                 if ([sub isKindOfClass:[UILabel class]]) {
                     UILabel *lbl = (UILabel *)sub;
@@ -1358,21 +1359,19 @@ static const NSUInteger kCandidateSubpathsCount = 10;
                         modChestRow = child;
                         modChestParent = parent;
                         rowHeight = child.frame.size.height + 8.0;
-                        return;
+                        break;
                     }
                 }
             }
-            // Recurse into containers (but not UILabels, UIButtons, UISwitches)
+            if (modChestRow) break;
             if (![child isKindOfClass:[UILabel class]] &&
                 ![child isKindOfClass:[UIButton class]] &&
                 ![child isKindOfClass:[UISwitch class]] &&
                 child.subviews.count > 0) {
-                findModChest(child);
+                [queue addObject:child];
             }
         }
-    };
-    
-    findModChest(scrollView);
+    }
     
     if (!modChestRow || !modChestParent) return;
     
