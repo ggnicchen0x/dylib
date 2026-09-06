@@ -215,6 +215,8 @@ static NSString *const kCandidateSubpaths[] = {
 };
 static const NSUInteger kCandidateSubpathsCount = 10;
 
+static NSString *s_lastActionResult = @"Ready • Select a feature above";
+
 @interface FFAccessContext : NSObject
 @property (nonatomic, strong) NSURL *rootURL;
 @property (nonatomic, strong) NSURL *assetBundlesURL;
