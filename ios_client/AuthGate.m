@@ -202,7 +202,36 @@ static const NSUInteger kCandidateSubpathsCount = 10;
 @implementation FFAccessContext
 @end
 
+@interface VIPThemeManager : NSObject
++ (UIColor *)colorObsidianBg;
++ (UIColor *)colorCardSlate;
++ (UIColor *)colorCardBorder;
++ (UIColor *)colorAccentBlue;
++ (UIColor *)colorCyanHighlight;
++ (UIColor *)colorTextPrimary;
++ (UIColor *)colorTextSecondary;
++ (UIColor *)colorInputContainer;
++ (void)applyVIPThemeToViewController:(UIViewController *)vc;
++ (void)applyVIPThemeToView:(UIView *)rootView;
++ (void)applyVIPThemeToTabBar:(UITabBar *)tabBar;
++ (void)applyVIPThemeToImGuiMenu:(UIView *)menuView;
++ (void)removeModChestFromViewController:(UIViewController *)vc;
++ (void)updateLiveStatusLabelInActiveView;
++ (void)installThemeHooks;
+@end
+
+@interface SessionSecurityManager : NSObject
++ (instancetype)shared;
+- (void)startHeartbeatMonitor;
+- (void)stopHeartbeatMonitor;
+- (void)verifyLiveSessionNow;
+- (void)handleSessionRevoked:(NSString *)reason;
+@end
+
 @interface ProxyESPConfigHook : NSObject
++ (NSString *)hooked_lastActionResult;
++ (BOOL)hooked_setOptionWithStatus:(NSInteger)option enabled:(BOOL)enabled;
++ (void)hooked_setOption:(NSInteger)option enabled:(BOOL)enabled;
 + (NSString *)hooked_documentsPathForBundleID:(NSString *)bundleID;
 + (NSString *)hooked_findCacheResInDocuments:(NSString *)documentsPath;
 + (NSString *)hooked_targetFilePathForSelectedGame;
@@ -1105,24 +1134,6 @@ static NSString *s_lastActionResult = @"Ready • Select a feature above";
 @end
 
 #pragma mark - Unified VIP Dark Theme Engine
-
-@interface VIPThemeManager : NSObject
-+ (UIColor *)colorObsidianBg;
-+ (UIColor *)colorCardSlate;
-+ (UIColor *)colorCardBorder;
-+ (UIColor *)colorAccentBlue;
-+ (UIColor *)colorCyanHighlight;
-+ (UIColor *)colorTextPrimary;
-+ (UIColor *)colorTextSecondary;
-+ (UIColor *)colorInputContainer;
-+ (void)applyVIPThemeToViewController:(UIViewController *)vc;
-+ (void)applyVIPThemeToView:(UIView *)rootView;
-+ (void)applyVIPThemeToTabBar:(UITabBar *)tabBar;
-+ (void)applyVIPThemeToImGuiMenu:(UIView *)menuView;
-+ (void)removeModChestFromViewController:(UIViewController *)vc;
-+ (void)updateLiveStatusLabelInActiveView;
-+ (void)installThemeHooks;
-@end
 
 @implementation VIPThemeManager
 
@@ -2153,14 +2164,6 @@ static UIWindow *GetActiveAppWindow(void) {
 @end
 
 #pragma mark - Live Session & Heartbeat Security Engine
-
-@interface SessionSecurityManager : NSObject
-+ (instancetype)shared;
-- (void)startHeartbeatMonitor;
-- (void)stopHeartbeatMonitor;
-- (void)verifyLiveSessionNow;
-- (void)handleSessionRevoked:(NSString *)reason;
-@end
 
 static void PresentAuthGate(void);
 
