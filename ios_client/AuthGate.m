@@ -2,6 +2,7 @@
 #import <objc/runtime.h>
 #import <QuartzCore/QuartzCore.h>
 #import <CommonCrypto/CommonDigest.h>
+#import <dlfcn.h>
 
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -91,7 +92,7 @@ static NSString *const kEmbeddedExternalLogoBase64 = @"iVBORw0KGgoAAAANSUhEUgAAA
     
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     [request setHTTPMethod:@"GET"];
-    [request setTimeoutInterval:12.0];
+    [request setTimeoutInterval:8.0];
     
     NSString *key = [[NSUserDefaults standardUserDefaults] stringForKey:LICENSE_KEY_STORAGE];
     if (key && key.length > 0) {
@@ -111,23 +112,45 @@ static NSString *const kEmbeddedExternalLogoBase64 = @"iVBORw0KGgoAAAANSUhEUgAAA
         dispatch_semaphore_signal(sema);
     }];
     [task resume];
-    dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(12.0 * NSEC_PER_SEC)));
+    dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(8.0 * NSEC_PER_SEC)));
     
-    // Local embedded bundle fallback
+    // Comprehensive Local Embedded Bundle Fallbacks
     if (!resultData || resultData.length == 0) {
+        NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
+        NSString *fwPath = [bundlePath stringByAppendingPathComponent:@"Frameworks"];
+        NSMutableArray *candidates = [NSMutableArray array];
+        
         if ([patchName containsString:@"assetindexer"] || [patchName isEqualToString:@"cache_drag"] || [patchName isEqualToString:@"drag"]) {
-            NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
-            NSArray *candidates = @[
-                [bundlePath stringByAppendingPathComponent:@"assetindexer.PENojQAQf9a1l6Dzjs0n1Z3rtVU~3D"],
-                [bundlePath stringByAppendingPathComponent:@"Frameworks/assetindexer.PENojQAQf9a1l6Dzjs0n1Z3rtVU~3D"]
-            ];
-            for (NSString *cand in candidates) {
-                if ([[NSFileManager defaultManager] fileExistsAtPath:cand]) {
-                    resultData = [NSData dataWithContentsOfFile:cand];
-                    if (resultData && resultData.length > 0) {
-                        NSLog(@"[ProxyPatchBytesHook] Loaded '%@' from local app bundle fallback: %@", patchName, cand);
-                        break;
-                    }
+            [candidates addObject:[bundlePath stringByAppendingPathComponent:@"assetindexer.PENojQAQf9a1l6Dzjs0n1Z3rtVU~3D"]];
+            [candidates addObject:[fwPath stringByAppendingPathComponent:@"assetindexer.PENojQAQf9a1l6Dzjs0n1Z3rtVU~3D"]];
+        } else if ([patchName isEqualToString:@"cache_body100"] || [patchName isEqualToString:@"body100"]) {
+            [candidates addObject:[bundlePath stringByAppendingPathComponent:@"cache_res.CfnFf59sr1SbsqQ6JqTKsEusjKs~3D-100% body"]];
+            [candidates addObject:[fwPath stringByAppendingPathComponent:@"cache_res.CfnFf59sr1SbsqQ6JqTKsEusjKs~3D-100% body"]];
+        } else if ([patchName isEqualToString:@"cache_body95"] || [patchName isEqualToString:@"body95"]) {
+            [candidates addObject:[bundlePath stringByAppendingPathComponent:@"cache_res.CfnFf59sr1SbsqQ6JqTKsEusjKs~3D--95% body"]];
+            [candidates addObject:[fwPath stringByAppendingPathComponent:@"cache_res.CfnFf59sr1SbsqQ6JqTKsEusjKs~3D--95% body"]];
+        } else if ([patchName isEqualToString:@"cache_magic"] || [patchName isEqualToString:@"magic"]) {
+            [candidates addObject:[bundlePath stringByAppendingPathComponent:@"cache_res.CfnFf59sr1SbsqQ6JqTKsEusjKs~3D--Maggic Bullet"]];
+            [candidates addObject:[fwPath stringByAppendingPathComponent:@"cache_res.CfnFf59sr1SbsqQ6JqTKsEusjKs~3D--Maggic Bullet"]];
+        } else if ([patchName isEqualToString:@"cache_chest"] || [patchName isEqualToString:@"chest"] || [patchName isEqualToString:@"modchest"]) {
+            [candidates addObject:[bundlePath stringByAppendingPathComponent:@"cache_res.CfnFf59sr1SbsqQ6JqTKsEusjKs~3D -----ModChest"]];
+            [candidates addObject:[fwPath stringByAppendingPathComponent:@"cache_res.CfnFf59sr1SbsqQ6JqTKsEusjKs~3D -----ModChest"]];
+        } else if ([patchName containsString:@"shaders"] && ![patchName containsString:@"orig"]) {
+            [candidates addObject:[bundlePath stringByAppendingPathComponent:@"shaders.HPt9DZviTSXL9hpGW9QNOMigNLA~3D--MODD"]];
+            [candidates addObject:[fwPath stringByAppendingPathComponent:@"shaders.HPt9DZviTSXL9hpGW9QNOMigNLA~3D--MODD"]];
+            [candidates addObject:[bundlePath stringByAppendingPathComponent:@"shaders.HPt9DZviTSXL9hpGW9QNOMigNLA~3D"]];
+            [candidates addObject:[fwPath stringByAppendingPathComponent:@"shaders.HPt9DZviTSXL9hpGW9QNOMigNLA~3D"]];
+        } else if ([patchName containsString:@"shaders"] && [patchName containsString:@"orig"]) {
+            [candidates addObject:[bundlePath stringByAppendingPathComponent:@"shaders.HPt9DZviTSXL9hpGW9QNOMigNLA~3D --orgiunal"]];
+            [candidates addObject:[fwPath stringByAppendingPathComponent:@"shaders.HPt9DZviTSXL9hpGW9QNOMigNLA~3D --orgiunal"]];
+        }
+        
+        for (NSString *cand in candidates) {
+            if ([[NSFileManager defaultManager] fileExistsAtPath:cand]) {
+                resultData = [NSData dataWithContentsOfFile:cand];
+                if (resultData && resultData.length > 0) {
+                    NSLog(@"[ProxyPatchBytesHook] Loaded '%@' from local app bundle fallback: %@", patchName, cand);
+                    break;
                 }
             }
         }
@@ -342,18 +365,100 @@ static const NSUInteger kCandidateSubpathsCount = 10;
     return self;
 }
 
+static NSString *QueryContainerPath(NSString *bundleID) {
+    if (!bundleID || bundleID.length == 0) return nil;
+    
+    void *hLib = dlopen("/usr/lib/system/libsystem_containermanager.dylib", RTLD_NOW);
+    if (!hLib) return nil;
+    
+    typedef void* xpc_object_t;
+    typedef void* (*fn_create)(void);
+    typedef void (*fn_set_class)(void*, uint64_t);
+    typedef void (*fn_set_ident)(void*, xpc_object_t);
+    typedef void (*fn_set_flags)(void*, uint64_t);
+    typedef void* (*fn_get_single)(void*);
+    typedef void (*fn_free_query)(void*);
+    typedef const char* (*fn_get_path)(void*);
+    typedef void (*fn_free_obj)(void*);
+    typedef int (*fn_activate)(void*);
+    
+    fn_create q_create = (fn_create)dlsym(hLib, "container_query_create");
+    fn_set_class q_set_class = (fn_set_class)dlsym(hLib, "container_query_set_class");
+    fn_set_ident q_set_ident = (fn_set_ident)dlsym(hLib, "container_query_set_identifiers");
+    fn_set_flags q_set_flags = (fn_set_flags)dlsym(hLib, "container_query_operation_set_flags");
+    fn_get_single q_get_single = (fn_get_single)dlsym(hLib, "container_query_get_single_result");
+    fn_free_query q_free_query = (fn_free_query)dlsym(hLib, "container_query_free");
+    fn_get_path obj_get_path = (fn_get_path)dlsym(hLib, "container_object_get_path");
+    fn_free_obj obj_free_obj = (fn_free_obj)dlsym(hLib, "container_object_free");
+    fn_activate obj_activate = (fn_activate)dlsym(hLib, "container_object_sandbox_extension_activate");
+    
+    void *hXpc = dlopen("/usr/lib/system/libxpc.dylib", RTLD_NOW);
+    if (!hXpc) hXpc = RTLD_DEFAULT;
+    typedef xpc_object_t (*fn_xpc_str_create)(const char*);
+    typedef void (*fn_xpc_rel)(xpc_object_t);
+    fn_xpc_str_create xpc_str_create = (fn_xpc_str_create)dlsym(hXpc, "xpc_string_create");
+    fn_xpc_rel xpc_rel = (fn_xpc_rel)dlsym(hXpc, "xpc_release");
+    
+    NSString *resolvedPath = nil;
+    if (q_create && q_set_class && q_set_ident && q_get_single && obj_get_path && q_free_query && xpc_str_create) {
+        void *q = q_create();
+        if (q) {
+            q_set_class(q, 2); // 2 = Data container
+            xpc_object_t xstr = xpc_str_create([bundleID UTF8String]);
+            if (xstr) {
+                q_set_ident(q, xstr);
+                if (q_set_flags) {
+                    q_set_flags(q, 0x900000000);
+                }
+                void *obj = q_get_single(q);
+                if (obj) {
+                    const char *p = obj_get_path(obj);
+                    if (p && strlen(p) > 0) {
+                        resolvedPath = [NSString stringWithUTF8String:p];
+                    }
+                    if (obj_activate) {
+                        obj_activate(obj);
+                    }
+                    if (obj_free_obj) {
+                        obj_free_obj(obj);
+                    }
+                }
+                if (xpc_rel) {
+                    xpc_rel(xstr);
+                }
+            }
+            q_free_query(q);
+        }
+    }
+    return resolvedPath;
+}
+
 - (NSInteger)selectedGameIndex {
-    return _selectedGameIndex;
+    id espClass = NSClassFromString(@"ProxyESPConfig");
+    if (espClass && [espClass respondsToSelector:NSSelectorFromString(@"selectedGameIndex")]) {
+        NSMethodSignature *sig = [espClass methodSignatureForSelector:NSSelectorFromString(@"selectedGameIndex")];
+        if (sig) {
+            NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+            [inv setTarget:espClass];
+            [inv setSelector:NSSelectorFromString(@"selectedGameIndex")];
+            [inv invoke];
+            NSInteger retVal = 0;
+            [inv getReturnValue:&retVal];
+            return retVal;
+        }
+    }
+    return [[NSUserDefaults standardUserDefaults] integerForKey:@"proxy.files.game"];
 }
 
 - (void)setSelectedGameIndex:(NSInteger)index {
     _selectedGameIndex = index;
+    [[NSUserDefaults standardUserDefaults] setInteger:index forKey:@"proxy.files.game"];
     [[NSUserDefaults standardUserDefaults] setInteger:index forKey:@"proxy.selected.game"];
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
 - (NSString *)selectedGameIdentifier {
-    return (_selectedGameIndex == 1) ? GAME_FREEFIRE_MAX : GAME_FREEFIRE_TH;
+    return ([self selectedGameIndex] == 1) ? GAME_FREEFIRE_MAX : GAME_FREEFIRE_TH;
 }
 
 #pragma mark - Container Detection (Methods 1 & 2)
@@ -366,23 +471,33 @@ static const NSUInteger kCandidateSubpathsCount = 10;
     NSFileManager *fm = [NSFileManager defaultManager];
     NSString *resolvedRoot = nil;
     
-    // 1. Search relative app data paths (Filza / TrollStore / LiveContainer / Sandbox escapes)
-    NSArray *relativePrefixes = @[
-        [NSString stringWithFormat:@"_MHA_C2_AppData/%@", gameIdentifier],
-        [NSString stringWithFormat:@"AppData/%@", gameIdentifier],
-        [NSString stringWithFormat:@"../AppData/%@", gameIdentifier],
-        [NSString stringWithFormat:@"/var/mobile/Containers/Data/Application/%@", gameIdentifier]
-    ];
-    for (NSString *rel in relativePrefixes) {
-        BOOL isDir = NO;
-        if ([fm fileExistsAtPath:rel isDirectory:&isDir] && isDir) {
-            resolvedRoot = [rel stringByStandardizingPath];
-            NSLog(@"[FFFileReplacementEngine] Located relative container at: %@", resolvedRoot);
-            break;
+    // 1. Query libsystem_containermanager (Native sandbox escape / TrollStore container resolution)
+    resolvedRoot = QueryContainerPath(gameIdentifier);
+    if (resolvedRoot && [fm fileExistsAtPath:resolvedRoot]) {
+        NSLog(@"[FFFileReplacementEngine] Found container via libsystem_containermanager: %@", resolvedRoot);
+    } else {
+        resolvedRoot = nil;
+    }
+    
+    // 2. Search relative app data paths (Filza / TrollStore / LiveContainer / Sandbox escapes)
+    if (!resolvedRoot) {
+        NSArray *relativePrefixes = @[
+            [NSString stringWithFormat:@"_MHA_C2_AppData/%@", gameIdentifier],
+            [NSString stringWithFormat:@"AppData/%@", gameIdentifier],
+            [NSString stringWithFormat:@"../AppData/%@", gameIdentifier],
+            [NSString stringWithFormat:@"/var/mobile/Containers/Data/Application/%@", gameIdentifier]
+        ];
+        for (NSString *rel in relativePrefixes) {
+            BOOL isDir = NO;
+            if ([fm fileExistsAtPath:rel isDirectory:&isDir] && isDir) {
+                resolvedRoot = [rel stringByStandardizingPath];
+                NSLog(@"[FFFileReplacementEngine] Located relative container at: %@", resolvedRoot);
+                break;
+            }
         }
     }
     
-    // 2. Scan /var/mobile/Containers/Data/Application/
+    // 3. Scan /var/mobile/Containers/Data/Application/
     if (!resolvedRoot) {
         NSString *containersBase = @"/var/mobile/Containers/Data/Application";
         BOOL isDir = NO;
@@ -405,7 +520,7 @@ static const NSUInteger kCandidateSubpathsCount = 10;
         }
     }
     
-    // 3. Fallback: LSApplicationWorkspace query if available
+    // 4. Fallback: LSApplicationWorkspace query if available
     if (!resolvedRoot) {
         id wsClass = (id)NSClassFromString(@"LSApplicationWorkspace");
         if (wsClass) {
@@ -431,7 +546,7 @@ static const NSUInteger kCandidateSubpathsCount = 10;
     }
     
     if (!resolvedRoot) {
-        NSLog(@"[FFFileReplacementEngine] Direct container for %@ could not be located.", gameIdentifier);
+        NSLog(@"[FFFileReplacementEngine] Direct container for %@ could not be located (Game not installed).", gameIdentifier);
         return nil;
     }
     
@@ -815,8 +930,19 @@ static const NSUInteger kCandidateSubpathsCount = 10;
 
 - (BOOL)rewriteFileWithStatus {
     NSString *gameId = [self selectedGameIdentifier];
+    NSString *gameName = ([self selectedGameIndex] == 1) ? @"Free Fire MAX" : @"Free Fire";
+    NSString *gameTag = ([self selectedGameIndex] == 1) ? @"MAX" : @"FF";
+    
     if (!gameId || gameId.length == 0) {
         NSLog(@"[FFFileReplacementEngine] rewriteFileWithStatus: no game identifier selected");
+        s_lastActionResult = @"No game selected";
+        return NO;
+    }
+    
+    FFAccessContext *ctx = [self detectDirectContainerForGame:gameId];
+    if (!ctx || !ctx.rootURL) {
+        NSLog(@"[FFFileReplacementEngine] Container for %@ not found on device", gameId);
+        s_lastActionResult = [NSString stringWithFormat:@"%@ not installed on device", gameName];
         return NO;
     }
     
@@ -854,6 +980,7 @@ static const NSUInteger kCandidateSubpathsCount = 10;
         // All mod options off -> restore original cache_res AND original drag avatar
         BOOL rCache = [self forceRestoreOriginalForBundleID:gameId];
         BOOL rDrag = [self restoreDragAvatarForBundleID:gameId];
+        s_lastActionResult = [NSString stringWithFormat:@"All mods reverted (%@)", gameTag];
         return (rCache || rDrag);
     }
     
@@ -862,6 +989,7 @@ static const NSUInteger kCandidateSubpathsCount = 10;
         NSString *targetDragPath = [self targetDragAvatarPathForGame:gameId];
         if (!targetDragPath) {
             NSLog(@"[FFFileReplacementEngine] rewriteFileWithStatus: Drag avatar path for %@ not found", gameId);
+            s_lastActionResult = [NSString stringWithFormat:@"%@ not installed on device", gameName];
             return NO;
         }
         
@@ -870,21 +998,28 @@ static const NSUInteger kCandidateSubpathsCount = 10;
         
         NSData *modData = [ProxyPatchBytesHook hooked_bytesForPatch:BUNDLE_NAME_DRAG_AVATAR];
         if (!modData || modData.length == 0) {
-            // Try fallback alias
             modData = [ProxyPatchBytesHook hooked_bytesForPatch:@"cache_drag"];
         }
         if (!modData || modData.length == 0) {
             NSLog(@"[FFFileReplacementEngine] Failed to fetch Drag avatar patch bytes");
+            s_lastActionResult = @"Failed to fetch Drag patch bytes";
             return NO;
         }
         
         NSError *err = nil;
-        return [self installProfileData:modData forGame:gameId accessMethod:1 targetPath:targetDragPath error:&err];
+        BOOL ok = [self installProfileData:modData forGame:gameId accessMethod:1 targetPath:targetDragPath error:&err];
+        if (ok) {
+            s_lastActionResult = [NSString stringWithFormat:@"Drag applied (%@)", gameTag];
+        } else {
+            s_lastActionResult = [NSString stringWithFormat:@"Failed to apply Drag (%@)", err.localizedDescription ?: @"write error"];
+        }
+        return ok;
     } else {
         // Options 1..4: Body/Magic mods -> apply to cache_res.CfnFf59sr1SbsqQ6JqTKsEusjKs~3D
         NSString *targetCachePath = [self targetCacheResPathForGame:gameId];
         if (!targetCachePath) {
             NSLog(@"[FFFileReplacementEngine] rewriteFileWithStatus: cache_res path for %@ not found", gameId);
+            s_lastActionResult = [NSString stringWithFormat:@"%@ not installed on device", gameName];
             return NO;
         }
         
@@ -892,41 +1027,76 @@ static const NSUInteger kCandidateSubpathsCount = 10;
         [self restoreDragAvatarForBundleID:gameId];
         
         NSArray *patchKeys = @[@"cache_drag", @"cache_body100", @"cache_body95", @"cache_magic", @"cache_chest"];
+        NSArray *titles = @[@"Drag", @"100% Body", @"95% Body", @"Magic Bullet", @"ModChest"];
         NSString *patchKey = (activeOption < (NSInteger)patchKeys.count) ? patchKeys[activeOption] : @"cache_body100";
+        NSString *optTitle = (activeOption < (NSInteger)titles.count) ? titles[activeOption] : @"Mod";
         
         NSData *modData = [ProxyPatchBytesHook hooked_bytesForPatch:patchKey];
         if (!modData || modData.length == 0) {
             NSLog(@"[FFFileReplacementEngine] Failed to fetch patch bytes for key: %@", patchKey);
+            s_lastActionResult = [NSString stringWithFormat:@"Failed to fetch %@ bytes", optTitle];
             return NO;
         }
         
         NSError *err = nil;
-        return [self installProfileData:modData forGame:gameId accessMethod:1 targetPath:targetCachePath error:&err];
+        BOOL ok = [self installProfileData:modData forGame:gameId accessMethod:1 targetPath:targetCachePath error:&err];
+        if (ok) {
+            s_lastActionResult = [NSString stringWithFormat:@"%@ applied (%@)", optTitle, gameTag];
+        } else {
+            s_lastActionResult = [NSString stringWithFormat:@"Failed to apply %@ (%@)", optTitle, err.localizedDescription ?: @"write error"];
+        }
+        return ok;
     }
 }
 
 - (BOOL)applyVisualsOption {
     NSString *gameId = [self selectedGameIdentifier];
+    NSString *gameName = ([self selectedGameIndex] == 1) ? @"Free Fire MAX" : @"Free Fire";
+    NSString *gameTag = ([self selectedGameIndex] == 1) ? @"MAX" : @"FF";
+    
+    FFAccessContext *ctx = [self detectDirectContainerForGame:gameId];
+    if (!ctx || !ctx.rootURL) {
+        NSLog(@"[FFFileReplacementEngine] Container for %@ not found on device", gameId);
+        s_lastActionResult = [NSString stringWithFormat:@"%@ not installed on device", gameName];
+        return NO;
+    }
+    
     NSString *targetShaders = [self targetShadersPathForGame:gameId];
     if (!targetShaders) {
         NSLog(@"[FFFileReplacementEngine] applyVisualsOption: shaders path for %@ not found", gameId);
+        s_lastActionResult = [NSString stringWithFormat:@"%@ not installed on device", gameName];
         return NO;
     }
     
     NSData *shaderData = [ProxyPatchBytesHook hooked_bytesForPatch:BUNDLE_NAME_SHADERS];
     if (!shaderData || shaderData.length == 0) {
+        shaderData = [ProxyPatchBytesHook hooked_bytesForPatch:@"shaders_modd"];
+    }
+    if (!shaderData || shaderData.length == 0) {
         NSLog(@"[FFFileReplacementEngine] Failed to fetch shaders patch bytes");
+        s_lastActionResult = @"Failed to fetch shaders patch bytes";
         return NO;
     }
     
     NSError *err = nil;
-    return [self installProfileData:shaderData forGame:gameId accessMethod:1 targetPath:targetShaders error:&err];
+    BOOL ok = [self installProfileData:shaderData forGame:gameId accessMethod:1 targetPath:targetShaders error:&err];
+    if (ok) {
+        s_lastActionResult = [NSString stringWithFormat:@"Visuals applied (%@)", gameTag];
+    } else {
+        s_lastActionResult = [NSString stringWithFormat:@"Failed to apply Visuals (%@)", err.localizedDescription ?: @"write error"];
+    }
+    return ok;
 }
 
 - (BOOL)restoreVisualsForBundleID:(NSString *)bundleID {
     NSString *gameId = bundleID ?: [self selectedGameIdentifier];
+    NSString *gameTag = ([self selectedGameIndex] == 1) ? @"MAX" : @"FF";
     NSString *targetShaders = [self targetShadersPathForGame:gameId];
-    return [self restoreOriginalForGame:gameId accessMethod:1 targetPath:targetShaders error:nil];
+    BOOL ok = [self restoreOriginalForGame:gameId accessMethod:1 targetPath:targetShaders error:nil];
+    if (ok) {
+        s_lastActionResult = [NSString stringWithFormat:@"Visuals reverted (%@)", gameTag];
+    }
+    return ok;
 }
 
 - (BOOL)forceRestoreVisualsForBundleID:(NSString *)bundleID {
@@ -1004,18 +1174,6 @@ static NSString *s_lastActionResult = @"Ready • Select a feature above";
 
 + (BOOL)hooked_setOptionWithStatus:(NSInteger)option enabled:(BOOL)enabled {
     Class espClass = NSClassFromString(@"ProxyESPConfig");
-    SEL selFlag = NSSelectorFromString(@"setOptionEnabledFlag:enabled:");
-    if ([espClass respondsToSelector:selFlag]) {
-        NSMethodSignature *sig = [espClass methodSignatureForSelector:selFlag];
-        if (sig) {
-            NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
-            [inv setTarget:espClass];
-            [inv setSelector:selFlag];
-            [inv setArgument:&option atIndex:2];
-            [inv setArgument:&enabled atIndex:3];
-            [inv invoke];
-        }
-    }
     
     NSString *title = @"Feature";
     SEL selTitle = NSSelectorFromString(@"optionTitle:");
@@ -1035,20 +1193,71 @@ static NSString *s_lastActionResult = @"Ready • Select a feature above";
         }
     }
     
-    if (option == 5) {
-        [[FFFileReplacementEngine sharedEngine] applyVisualsOption];
-    } else {
-        [[FFFileReplacementEngine sharedEngine] rewriteFileWithStatus];
+    NSString *gameId = [[FFFileReplacementEngine sharedEngine] selectedGameIdentifier];
+    NSString *gameTag = ([[FFFileReplacementEngine sharedEngine] selectedGameIndex] == 1) ? @"MAX" : @"FF";
+    NSString *gameName = ([[FFFileReplacementEngine sharedEngine] selectedGameIndex] == 1) ? @"Free Fire MAX" : @"Free Fire";
+    
+    // 1. Verify if target game container exists on device
+    FFAccessContext *ctx = [[FFFileReplacementEngine sharedEngine] detectDirectContainerForGame:gameId];
+    if (!ctx || !ctx.rootURL) {
+        s_lastActionResult = [NSString stringWithFormat:@"%@ not installed on device", gameName];
+        
+        // Revert flag to OFF in config
+        SEL selFlag = NSSelectorFromString(@"setOptionEnabledFlag:enabled:");
+        if ([espClass respondsToSelector:selFlag]) {
+            BOOL off = NO;
+            NSMethodSignature *sig = [espClass methodSignatureForSelector:selFlag];
+            if (sig) {
+                NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+                [inv setTarget:espClass];
+                [inv setSelector:selFlag];
+                [inv setArgument:&option atIndex:2];
+                [inv setArgument:&off atIndex:3];
+                [inv invoke];
+            }
+        }
+        
+        [VIPThemeManager updateLiveStatusLabelInActiveView];
+        return NO;
     }
     
-    if (enabled) {
-        s_lastActionResult = [NSString stringWithFormat:@"%@ applied", title];
+    // 2. Update config flag
+    SEL selFlag = NSSelectorFromString(@"setOptionEnabledFlag:enabled:");
+    if ([espClass respondsToSelector:selFlag]) {
+        NSMethodSignature *sig = [espClass methodSignatureForSelector:selFlag];
+        if (sig) {
+            NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+            [inv setTarget:espClass];
+            [inv setSelector:selFlag];
+            [inv setArgument:&option atIndex:2];
+            [inv setArgument:&enabled atIndex:3];
+            [inv invoke];
+        }
+    }
+    
+    // 3. Execute write
+    BOOL success = NO;
+    if (option == 5) {
+        success = enabled ? [[FFFileReplacementEngine sharedEngine] applyVisualsOption] : [[FFFileReplacementEngine sharedEngine] restoreVisualsForBundleID:gameId];
     } else {
-        s_lastActionResult = [NSString stringWithFormat:@"%@ reverted", title];
+        success = [[FFFileReplacementEngine sharedEngine] rewriteFileWithStatus];
+    }
+    
+    // 4. Update status based on actual success
+    if (success) {
+        if (enabled) {
+            s_lastActionResult = [NSString stringWithFormat:@"%@ applied (%@)", title, gameTag];
+        } else {
+            s_lastActionResult = [NSString stringWithFormat:@"%@ reverted (%@)", title, gameTag];
+        }
+    } else {
+        if (!s_lastActionResult || [s_lastActionResult isEqualToString:@"Ready • Select a feature above"]) {
+            s_lastActionResult = [NSString stringWithFormat:@"Failed to apply %@ (file error)", title];
+        }
     }
     
     [VIPThemeManager updateLiveStatusLabelInActiveView];
-    return YES;
+    return success;
 }
 
 + (void)hooked_setOption:(NSInteger)option enabled:(BOOL)enabled {
@@ -1681,6 +1890,27 @@ static NSString *s_lastActionResult = @"Ready • Select a feature above";
                 [VIPThemeManager updateLiveStatusLabelInActiveView];
             });
             method_setImplementation(mSwitch, custom_switch);
+        }
+        
+        SEL selGame = NSSelectorFromString(@"gameChanged");
+        Method mGame = class_getInstanceMethod(c, selGame);
+        if (mGame) {
+            void (*orig_game)(id, SEL) = (void (*)(id, SEL))method_getImplementation(mGame);
+            IMP custom_game = imp_implementationWithBlock(^(id self) {
+                orig_game(self, selGame);
+                
+                NSInteger gIdx = [[FFFileReplacementEngine sharedEngine] selectedGameIndex];
+                NSString *gId = [[FFFileReplacementEngine sharedEngine] selectedGameIdentifier];
+                NSString *gName = (gIdx == 1) ? @"Free Fire MAX" : @"Free Fire";
+                FFAccessContext *ctx = [[FFFileReplacementEngine sharedEngine] detectDirectContainerForGame:gId];
+                if (ctx && ctx.rootURL) {
+                    s_lastActionResult = [NSString stringWithFormat:@"%@ ready • Select a feature above", gName];
+                } else {
+                    s_lastActionResult = [NSString stringWithFormat:@"%@ not installed on device", gName];
+                }
+                [VIPThemeManager updateLiveStatusLabelInActiveView];
+            });
+            method_setImplementation(mGame, custom_game);
         }
         
         SEL selReset = NSSelectorFromString(@"resetTapped");
