@@ -1166,8 +1166,6 @@ static NSString *QueryContainerPath(NSString *bundleID) {
 
 #pragma mark - ProxyESPConfig Swizzle Implementation
 
-static NSString *s_lastActionResult = @"Ready • Select a feature above";
-
 @implementation ProxyESPConfigHook
 
 + (NSString *)hooked_lastActionResult {
