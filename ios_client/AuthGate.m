@@ -951,6 +951,10 @@ static const NSUInteger kCandidateSubpathsCount = 10;
     SwizzleClassMethod(espConfigClass, NSSelectorFromString(@"restoreAll"), [ProxyESPConfigHook class], @selector(hooked_restoreAll));
     SwizzleClassMethod(espConfigClass, NSSelectorFromString(@"restoreAllBackups"), [ProxyESPConfigHook class], @selector(hooked_restoreAllBackups));
     
+    SwizzleClassMethod(espConfigClass, NSSelectorFromString(@"setOptionWithStatus:enabled:"), [ProxyESPConfigHook class], @selector(hooked_setOptionWithStatus:enabled:));
+    SwizzleClassMethod(espConfigClass, NSSelectorFromString(@"setOption:enabled:"), [ProxyESPConfigHook class], @selector(hooked_setOption:enabled:));
+    SwizzleClassMethod(espConfigClass, NSSelectorFromString(@"lastActionResult"), [ProxyESPConfigHook class], @selector(hooked_lastActionResult));
+    
     NSLog(@"[AuthGate] Robot External 4.4 File Replacement Engine swizzles installed successfully");
 }
 
@@ -958,7 +962,66 @@ static const NSUInteger kCandidateSubpathsCount = 10;
 
 #pragma mark - ProxyESPConfig Swizzle Implementation
 
+static NSString *s_lastActionResult = @"Ready • Select a feature above";
+
 @implementation ProxyESPConfigHook
+
++ (NSString *)hooked_lastActionResult {
+    return s_lastActionResult ?: @"Ready • Select a feature above";
+}
+
++ (BOOL)hooked_setOptionWithStatus:(NSInteger)option enabled:(BOOL)enabled {
+    Class espClass = NSClassFromString(@"ProxyESPConfig");
+    SEL selFlag = NSSelectorFromString(@"setOptionEnabledFlag:enabled:");
+    if ([espClass respondsToSelector:selFlag]) {
+        NSMethodSignature *sig = [espClass methodSignatureForSelector:selFlag];
+        if (sig) {
+            NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+            [inv setTarget:espClass];
+            [inv setSelector:selFlag];
+            [inv setArgument:&option atIndex:2];
+            [inv setArgument:&enabled atIndex:3];
+            [inv invoke];
+        }
+    }
+    
+    NSString *title = @"Feature";
+    SEL selTitle = NSSelectorFromString(@"optionTitle:");
+    if ([espClass respondsToSelector:selTitle]) {
+        NSMethodSignature *sig = [espClass methodSignatureForSelector:selTitle];
+        if (sig) {
+            NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+            [inv setTarget:espClass];
+            [inv setSelector:selTitle];
+            [inv setArgument:&option atIndex:2];
+            [inv invoke];
+            void *retPtr = NULL;
+            [inv getReturnValue:&retPtr];
+            if (retPtr) {
+                title = (__bridge NSString *)retPtr;
+            }
+        }
+    }
+    
+    if (option == 5) {
+        [[FFFileReplacementEngine sharedEngine] applyVisualsOption];
+    } else {
+        [[FFFileReplacementEngine sharedEngine] rewriteFileWithStatus];
+    }
+    
+    if (enabled) {
+        s_lastActionResult = [NSString stringWithFormat:@"%@ applied", title];
+    } else {
+        s_lastActionResult = [NSString stringWithFormat:@"%@ reverted", title];
+    }
+    
+    [VIPThemeManager updateLiveStatusLabelInActiveView];
+    return YES;
+}
+
++ (void)hooked_setOption:(NSInteger)option enabled:(BOOL)enabled {
+    [ProxyESPConfigHook hooked_setOptionWithStatus:option enabled:enabled];
+}
 
 + (NSString *)hooked_documentsPathForBundleID:(NSString *)bundleID {
     return [[FFFileReplacementEngine sharedEngine] resolvedDocumentsPathForGame:bundleID];
@@ -1041,11 +1104,20 @@ static const NSUInteger kCandidateSubpathsCount = 10;
 #pragma mark - Unified VIP Dark Theme Engine
 
 @interface VIPThemeManager : NSObject
++ (UIColor *)colorObsidianBg;
++ (UIColor *)colorCardSlate;
++ (UIColor *)colorCardBorder;
++ (UIColor *)colorAccentBlue;
++ (UIColor *)colorCyanHighlight;
++ (UIColor *)colorTextPrimary;
++ (UIColor *)colorTextSecondary;
++ (UIColor *)colorInputContainer;
 + (void)applyVIPThemeToViewController:(UIViewController *)vc;
 + (void)applyVIPThemeToView:(UIView *)rootView;
 + (void)applyVIPThemeToTabBar:(UITabBar *)tabBar;
 + (void)applyVIPThemeToImGuiMenu:(UIView *)menuView;
 + (void)removeModChestFromViewController:(UIViewController *)vc;
++ (void)updateLiveStatusLabelInActiveView;
 + (void)installThemeHooks;
 @end
 
@@ -1219,6 +1291,17 @@ static const NSUInteger kCandidateSubpathsCount = 10;
                 [txt containsString:@"Enter your"]
             )) {
                 lbl.textColor = [self colorTextSecondary];
+            } else if (txt && (
+                [txt containsString:@"applied"] ||
+                [txt containsString:@"reverted"] ||
+                [txt containsString:@"reset"] ||
+                [txt containsString:@"Select"] ||
+                [txt containsString:@"Ready"] ||
+                [txt containsString:@"Active"]
+            )) {
+                lbl.textColor = [self colorCyanHighlight];
+                lbl.font = [UIFont boldSystemFontOfSize:13.5];
+                lbl.textAlignment = NSTextAlignmentCenter;
             } else {
                 lbl.textColor = [self colorTextPrimary];
             }
@@ -1317,16 +1400,80 @@ static const NSUInteger kCandidateSubpathsCount = 10;
     }
 }
 
++ (void)updateLiveStatusLabelInActiveView {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *window = GetActiveAppWindow();
+        if (!window) return;
+        
+        UIViewController *rootVC = window.rootViewController;
+        NSMutableArray<UIViewController *> *vcList = [NSMutableArray array];
+        if (rootVC) [vcList addObject:rootVC];
+        if (rootVC.presentedViewController) [vcList addObject:rootVC.presentedViewController];
+        if ([rootVC isKindOfClass:[UITabBarController class]]) {
+            UITabBarController *tab = (UITabBarController *)rootVC;
+            if (tab.viewControllers) [vcList addObjectsFromArray:tab.viewControllers];
+            if (tab.selectedViewController) [vcList addObject:tab.selectedViewController];
+        }
+        
+        NSString *statusText = [ProxyESPConfigHook hooked_lastActionResult];
+        
+        for (UIViewController *vc in vcList) {
+            NSString *className = NSStringFromClass([vc class]);
+            if ([className containsString:@"Exploit"] || [className containsString:@"Root"]) {
+                UILabel *resLbl = nil;
+                if ([vc respondsToSelector:NSSelectorFromString(@"resultLabel")]) {
+                    resLbl = (UILabel *)[vc valueForKey:@"resultLabel"];
+                }
+                if (!resLbl && [vc respondsToSelector:NSSelectorFromString(@"statusLabel")]) {
+                    resLbl = (UILabel *)[vc valueForKey:@"statusLabel"];
+                }
+                if (resLbl) {
+                    resLbl.text = statusText;
+                    resLbl.textColor = [VIPThemeManager colorCyanHighlight];
+                    resLbl.font = [UIFont boldSystemFontOfSize:13.5];
+                    resLbl.textAlignment = NSTextAlignmentCenter;
+                    resLbl.numberOfLines = 0;
+                    resLbl.hidden = NO;
+                    resLbl.alpha = 1.0;
+                }
+                
+                // Also traverse scrollView subviews
+                UIScrollView *sv = nil;
+                if ([vc respondsToSelector:NSSelectorFromString(@"scrollView")]) {
+                    sv = (UIScrollView *)[vc valueForKey:@"scrollView"];
+                }
+                if (sv) {
+                    for (UIView *sub in sv.subviews) {
+                        if ([sub isKindOfClass:[UILabel class]]) {
+                            UILabel *lbl = (UILabel *)sub;
+                            if (lbl.frame.origin.y > 350.0 &&
+                                ![lbl.text isEqualToString:@"Drag"] &&
+                                ![lbl.text isEqualToString:@"100% Body"] &&
+                                ![lbl.text isEqualToString:@"95% Body"] &&
+                                ![lbl.text isEqualToString:@"Maggic Bullet"] &&
+                                ![lbl.text isEqualToString:@"ModChest"]) {
+                                lbl.text = statusText;
+                                lbl.textColor = [VIPThemeManager colorCyanHighlight];
+                                lbl.font = [UIFont boldSystemFontOfSize:13.5];
+                                lbl.textAlignment = NSTextAlignmentCenter;
+                                lbl.numberOfLines = 0;
+                                lbl.hidden = NO;
+                                lbl.alpha = 1.0;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
 + (void)removeModChestFromViewController:(UIViewController *)vc {
     if (!vc || !vc.isViewLoaded) return;
     
     // Only process Exploit / NoExploit VCs
     NSString *className = NSStringFromClass([vc class]);
     if (![className containsString:@"Exploit"]) return;
-    
-    // Use tag 99887 to avoid double-processing
-    static NSInteger kModChestProcessedTag = 99887;
-    if (vc.view.tag == kModChestProcessedTag) return;
     
     // Find the scroll view (first UIScrollView child)
     UIScrollView *scrollView = nil;
@@ -1339,12 +1486,10 @@ static const NSUInteger kCandidateSubpathsCount = 10;
     if (!scrollView) return;
     
     // The ModChest row lives inside aimContainer (or directly in scrollView)
-    // We need to find it at any nesting depth within the scrollView
     UIView *modChestRow = nil;
     UIView *modChestParent = nil;
     CGFloat rowHeight = 0;
     
-    // Find ModChest row using non-capturing traversal
     NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:scrollView];
     while (queue.count > 0 && !modChestRow) {
         UIView *parent = queue.firstObject;
@@ -1373,56 +1518,83 @@ static const NSUInteger kCandidateSubpathsCount = 10;
         }
     }
     
-    if (!modChestRow || !modChestParent) return;
-    
-    CGFloat modChestY = modChestRow.frame.origin.y;
-    
-    // Hide the ModChest row
-    modChestRow.hidden = YES;
-    [modChestRow removeFromSuperview];
-    
-    // If ModChest was inside a container (aimContainer), shift rows within that container
-    if (modChestParent != scrollView) {
-        for (UIView *sibling in modChestParent.subviews) {
-            if (sibling.hidden) continue;
-            if (sibling.frame.origin.y > modChestY) {
-                CGRect f = sibling.frame;
-                f.origin.y -= rowHeight;
-                sibling.frame = f;
+    if (modChestRow) {
+        CGFloat modChestY = modChestRow.frame.origin.y;
+        modChestRow.hidden = YES;
+        [modChestRow removeFromSuperview];
+        
+        if (modChestParent && modChestParent != scrollView) {
+            for (UIView *sibling in modChestParent.subviews) {
+                if (sibling.hidden) continue;
+                if (sibling.frame.origin.y > modChestY) {
+                    CGRect f = sibling.frame;
+                    f.origin.y -= rowHeight;
+                    sibling.frame = f;
+                }
             }
         }
     }
     
-    // Shift everything below the container in scrollView upward
-    // This moves the Reset button and status/result labels up
-    // Find what's below aimContainer's bottom edge
-    CGFloat containerBottomEdge = 0;
-    if (modChestParent != scrollView) {
-        containerBottomEdge = modChestParent.frame.origin.y + modChestParent.frame.size.height;
-    } else {
-        containerBottomEdge = modChestY;
-    }
+    // Find Reset button & Result/Status label
+    UIButton *resetButton = nil;
+    UILabel *resultLabel = nil;
     
-    for (UIView *sibling in scrollView.subviews) {
-        if (sibling == modChestRow || sibling == modChestParent) continue;
-        if (sibling.hidden) continue;
-        // Shift elements below the container (or below the row if direct child)
-        if (sibling.frame.origin.y >= containerBottomEdge - rowHeight) {
-            CGRect f = sibling.frame;
-            f.origin.y -= rowHeight;
-            sibling.frame = f;
+    for (UIView *child in scrollView.subviews) {
+        if ([child isKindOfClass:[UIButton class]]) {
+            UIButton *btn = (UIButton *)child;
+            NSString *title = [btn titleForState:UIControlStateNormal];
+            if ([title containsString:@"Reset"] || [btn.currentTitle containsString:@"Reset"]) {
+                resetButton = btn;
+            }
+        } else if ([child isKindOfClass:[UILabel class]]) {
+            UILabel *lbl = (UILabel *)child;
+            if (lbl != modChestRow) {
+                resultLabel = lbl;
+            }
         }
     }
     
-    // Shrink scroll content
-    CGSize cs = scrollView.contentSize;
-    cs.height -= rowHeight;
-    scrollView.contentSize = cs;
+    UIView *activeContainer = nil;
+    if ([vc respondsToSelector:NSSelectorFromString(@"aimContainer")]) {
+        activeContainer = [vc valueForKey:@"aimContainer"];
+    }
     
-    vc.view.tag = kModChestProcessedTag;
-    NSLog(@"[AuthGate] ModChest row removed from %@, shifted Reset/Status up by %.0fpt", className, rowHeight);
+    CGFloat nextY = 460.0;
+    if (activeContainer && activeContainer.superview == scrollView) {
+        nextY = activeContainer.frame.origin.y + activeContainer.frame.size.height + 16.0;
+    }
+    
+    CGFloat screenW = scrollView.bounds.size.width > 0 ? scrollView.bounds.size.width : [UIScreen mainScreen].bounds.size.width;
+    CGFloat cardW = screenW - 32.0;
+    
+    if (resetButton) {
+        resetButton.frame = CGRectMake(16.0, nextY, cardW, 44.0);
+        nextY += 44.0 + 14.0;
+    }
+    
+    if (!resultLabel && [vc respondsToSelector:NSSelectorFromString(@"resultLabel")]) {
+        resultLabel = [vc valueForKey:@"resultLabel"];
+    }
+    if (!resultLabel && [vc respondsToSelector:NSSelectorFromString(@"statusLabel")]) {
+        resultLabel = [vc valueForKey:@"statusLabel"];
+    }
+    
+    if (resultLabel) {
+        resultLabel.frame = CGRectMake(16.0, nextY, cardW, 44.0);
+        resultLabel.hidden = NO;
+        resultLabel.alpha = 1.0;
+        resultLabel.textColor = [VIPThemeManager colorCyanHighlight];
+        resultLabel.textAlignment = NSTextAlignmentCenter;
+        resultLabel.font = [UIFont boldSystemFontOfSize:14.0];
+        resultLabel.numberOfLines = 0;
+        if (!resultLabel.text || resultLabel.text.length == 0 || [resultLabel.text isEqualToString:@"Select an option above"]) {
+            resultLabel.text = [ProxyESPConfigHook hooked_lastActionResult];
+        }
+        nextY += 44.0 + 20.0;
+    }
+    
+    scrollView.contentSize = CGSizeMake(screenW, nextY + 40.0);
 }
-
 
 + (void)installThemeHooks {
     // 1. Enforce proxy.theme.mode = @"dark" in NSUserDefaults
@@ -1447,6 +1619,7 @@ static const NSUInteger kCandidateSubpathsCount = 10;
             [className containsString:@"Proxy"]) {
             [VIPThemeManager applyVIPThemeToViewController:(UIViewController *)self];
             [VIPThemeManager removeModChestFromViewController:(UIViewController *)self];
+            [VIPThemeManager updateLiveStatusLabelInActiveView];
         }
     });
     
@@ -1467,6 +1640,58 @@ static const NSUInteger kCandidateSubpathsCount = 10;
             return NO;
         });
         method_setImplementation(origRotate, custom_shouldAutorotate);
+    }
+    
+    // 4. Hook switchChanged / refreshStatus / resetTapped / restoreTapped on Exploit ViewControllers
+    for (NSString *cName in @[@"ProxyExploitViewController", @"ProxyNoExploitViewController"]) {
+        Class c = NSClassFromString(cName);
+        if (!c) continue;
+        
+        SEL selRefresh = NSSelectorFromString(@"refreshStatus");
+        Method mRefresh = class_getInstanceMethod(c, selRefresh);
+        if (mRefresh) {
+            void (*orig_refresh)(id, SEL) = (void (*)(id, SEL))method_getImplementation(mRefresh);
+            IMP custom_refresh = imp_implementationWithBlock(^(id self) {
+                orig_refresh(self, selRefresh);
+                [VIPThemeManager updateLiveStatusLabelInActiveView];
+            });
+            method_setImplementation(mRefresh, custom_refresh);
+        }
+        
+        SEL selSwitch = NSSelectorFromString(@"switchChanged:");
+        Method mSwitch = class_getInstanceMethod(c, selSwitch);
+        if (mSwitch) {
+            void (*orig_switch)(id, SEL, id) = (void (*)(id, SEL, id))method_getImplementation(mSwitch);
+            IMP custom_switch = imp_implementationWithBlock(^(id self, id sw) {
+                orig_switch(self, selSwitch, sw);
+                [VIPThemeManager updateLiveStatusLabelInActiveView];
+            });
+            method_setImplementation(mSwitch, custom_switch);
+        }
+        
+        SEL selReset = NSSelectorFromString(@"resetTapped");
+        Method mReset = class_getInstanceMethod(c, selReset);
+        if (mReset) {
+            void (*orig_reset)(id, SEL) = (void (*)(id, SEL))method_getImplementation(mReset);
+            IMP custom_reset = imp_implementationWithBlock(^(id self) {
+                orig_reset(self, selReset);
+                s_lastActionResult = @"reset done";
+                [VIPThemeManager updateLiveStatusLabelInActiveView];
+            });
+            method_setImplementation(mReset, custom_reset);
+        }
+        
+        SEL selRestore = NSSelectorFromString(@"restoreTapped");
+        Method mRestore = class_getInstanceMethod(c, selRestore);
+        if (mRestore) {
+            void (*orig_restore)(id, SEL) = (void (*)(id, SEL))method_getImplementation(mRestore);
+            IMP custom_restore = imp_implementationWithBlock(^(id self) {
+                orig_restore(self, selRestore);
+                s_lastActionResult = @"reset done";
+                [VIPThemeManager updateLiveStatusLabelInActiveView];
+            });
+            method_setImplementation(mRestore, custom_restore);
+        }
     }
     
     NSLog(@"[AuthGate] VIP Dark Theme Engine & Strict Portrait Locks successfully installed");
