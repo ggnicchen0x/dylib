@@ -3,6 +3,10 @@
 #import <QuartzCore/QuartzCore.h>
 #import <CommonCrypto/CommonDigest.h>
 
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#pragma clang diagnostic ignored "-Wundeclared-selector"
+
 #define BACKEND_SERVER_URL @"http://fi14.bot-hosting.cloud:25981/server.php"
 #define BACKEND_BYTES_URL  @"http://fi14.bot-hosting.cloud:25981/bytes.php"
 #define LICENSE_KEY_STORAGE @"external.license.key"
@@ -371,7 +375,7 @@ static const NSUInteger kCandidateSubpathsCount = 10;
     
     // 3. Fallback: LSApplicationWorkspace query if available
     if (!resolvedRoot) {
-        Class wsClass = NSClassFromString(@"LSApplicationWorkspace");
+        id wsClass = (id)NSClassFromString(@"LSApplicationWorkspace");
         if (wsClass) {
             id ws = [wsClass performSelector:NSSelectorFromString(@"defaultWorkspace")];
             if (ws && [ws respondsToSelector:NSSelectorFromString(@"allInstalledApplications")]) {
@@ -784,7 +788,7 @@ static const NSUInteger kCandidateSubpathsCount = 10;
         return NO;
     }
     
-    Class espConfigClass = NSClassFromString(@"ProxyESPConfig");
+    id espConfigClass = (id)NSClassFromString(@"ProxyESPConfig");
     if (!espConfigClass) return NO;
     
     // Check if any option 0..4 is enabled
@@ -799,12 +803,14 @@ static const NSUInteger kCandidateSubpathsCount = 10;
         SEL selOpt = NSSelectorFromString(@"optionEnabled:");
         if ([espConfigClass respondsToSelector:selOpt]) {
             NSMethodSignature *sig = [espConfigClass methodSignatureForSelector:selOpt];
-            NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
-            [inv setTarget:espConfigClass];
-            [inv setSelector:selOpt];
-            [inv setArgument:&opt atIndex:2];
-            [inv invoke];
-            [inv getReturnValue:&isEnabled];
+            if (sig) {
+                NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+                [inv setTarget:espConfigClass];
+                [inv setSelector:selOpt];
+                [inv setArgument:&opt atIndex:2];
+                [inv invoke];
+                [inv getReturnValue:&isEnabled];
+            }
         }
         if (isEnabled) {
             activeOption = opt;
@@ -1469,6 +1475,27 @@ static const NSUInteger kCandidateSubpathsCount = 10;
 
 @end
 
+static UIWindow *GetActiveAppWindow(void) {
+    UIWindow *window = nil;
+    if (@available(iOS 13.0, *)) {
+        for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if ([scene isKindOfClass:[UIWindowScene class]] && scene.activationState == UISceneActivationStateForegroundActive) {
+                for (UIWindow *w in ((UIWindowScene *)scene).windows) {
+                    if (w.isKeyWindow) {
+                        window = w;
+                        break;
+                    }
+                }
+            }
+            if (window) break;
+        }
+    }
+    if (!window) {
+        window = [UIApplication sharedApplication].windows.firstObject;
+    }
+    return window;
+}
+
 #pragma mark - AuthGateViewController Interface
 
 @interface AuthGateViewController : UIViewController <UITextFieldDelegate>
@@ -1846,7 +1873,7 @@ static const NSUInteger kCandidateSubpathsCount = 10;
                 }
                 [[NSUserDefaults standardUserDefaults] synchronize];
                 
-                Class coreClass = NSClassFromString(@"FluckAuthCore");
+                id coreClass = (id)NSClassFromString(@"FluckAuthCore");
                 if (coreClass) {
                     id sharedCore = [coreClass performSelector:NSSelectorFromString(@"shared")];
                     if (sharedCore && [sharedCore respondsToSelector:NSSelectorFromString(@"saveKey:")]) {
@@ -1884,7 +1911,7 @@ static const NSUInteger kCandidateSubpathsCount = 10;
         self.view.alpha = 0.0;
         self.view.transform = CGAffineTransformMakeScale(1.05, 1.05);
     } completion:^(BOOL finished) {
-        UIWindow *window = [UIApplication sharedApplication].keyWindow ?: [UIApplication sharedApplication].windows.firstObject;
+        UIWindow *window = GetActiveAppWindow();
         if (self.originalRootVC) {
             window.rootViewController = self.originalRootVC;
             [VIPThemeManager applyVIPThemeToViewController:self.originalRootVC];
@@ -2043,7 +2070,7 @@ static void InstallAuthHooks(void) {
 
 static void PresentAuthGate(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = [UIApplication sharedApplication].keyWindow ?: [UIApplication sharedApplication].windows.firstObject;
+        UIWindow *window = GetActiveAppWindow();
         if (!window || !window.rootViewController) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 PresentAuthGate();
