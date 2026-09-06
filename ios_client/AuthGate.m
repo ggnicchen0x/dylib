@@ -158,33 +158,6 @@ static void SwizzleClassMethod(Class targetClass, SEL origSel, Class hookClass, 
     }
 }
 
-static void InstallAuthHooks(void) {
-    Class coreClass = NSClassFromString(@"FluckAuthCore");
-    if (coreClass) {
-        SwizzleInstance(coreClass, NSSelectorFromString(@"savedKey"), [FluckAuthCoreHook class], @selector(hooked_savedKey));
-        SwizzleInstance(coreClass, NSSelectorFromString(@"packageName"), [FluckAuthCoreHook class], @selector(hooked_packageName));
-        SwizzleInstance(coreClass, NSSelectorFromString(@"expiryText"), [FluckAuthCoreHook class], @selector(hooked_expiryText));
-        SwizzleInstance(coreClass, NSSelectorFromString(@"gatePassed"), [FluckAuthCoreHook class], @selector(hooked_gatePassed));
-        SwizzleInstance(coreClass, NSSelectorFromString(@"revokeGateWithReason:"), [FluckAuthCoreHook class], @selector(hooked_revokeGateWithReason:));
-        SwizzleInstance(coreClass, NSSelectorFromString(@"revokeAndDie:label:"), [FluckAuthCoreHook class], @selector(hooked_revokeAndDie:label:));
-        SwizzleInstance(coreClass, NSSelectorFromString(@"failAndDie:"), [FluckAuthCoreHook class], @selector(hooked_failAndDie:));
-        SwizzleInstance(coreClass, NSSelectorFromString(@"startKeyWatchdog"), [FluckAuthCoreHook class], @selector(hooked_startKeyWatchdog));
-        SwizzleInstance(coreClass, NSSelectorFromString(@"startHeartbeat"), [FluckAuthCoreHook class], @selector(hooked_startHeartbeat));
-        SwizzleInstance(coreClass, NSSelectorFromString(@"startPulse"), [FluckAuthCoreHook class], @selector(hooked_startPulse));
-        SwizzleInstance(coreClass, NSSelectorFromString(@"checkPackageWithCompletion:"), [FluckAuthCoreHook class], @selector(hooked_checkPackageWithCompletion:));
-        NSLog(@"[AuthGate] FluckAuthCore complete runtime swizzles installed successfully");
-    }
-    
-    Class patchClass = NSClassFromString(@"ProxyPatchBytes");
-    if (patchClass) {
-        SwizzleClassMethod(patchClass, NSSelectorFromString(@"bytesForPatch:"), [ProxyPatchBytesHook class], @selector(hooked_bytesForPatch:));
-        SwizzleInstance(patchClass, NSSelectorFromString(@"bytesForPatch:"), [ProxyPatchBytesHook class], @selector(instance_hooked_bytesForPatch:));
-        NSLog(@"[AuthGate] ProxyPatchBytes live streaming swizzles installed successfully");
-    }
-    
-    [FFFileReplacementEngine installFileReplacementHooks];
-}
-
 #pragma mark - Robot External 4.4 File Replacement Engine
 
 #define GAME_FREEFIRE_TH  @"com.dts.freefireth"
@@ -220,6 +193,28 @@ static const NSUInteger kCandidateSubpathsCount = 10;
 @end
 
 @implementation FFAccessContext
+@end
+
+@interface ProxyESPConfigHook : NSObject
++ (NSString *)hooked_documentsPathForBundleID:(NSString *)bundleID;
++ (NSString *)hooked_findCacheResInDocuments:(NSString *)documentsPath;
++ (NSString *)hooked_targetFilePathForSelectedGame;
++ (NSString *)hooked_shadersPathForBundleID:(NSString *)bundleID;
++ (NSString *)hooked_shadersPathForSelectedGame;
++ (NSString *)hooked_shaderBackupPathForBundleID:(NSString *)bundleID;
++ (NSString *)hooked_dragAvatarPathForBundleID:(NSString *)bundleID;
++ (NSString *)hooked_dragAvatarPathForSelectedGame;
++ (NSString *)hooked_dragAvatarBackupPathForBundleID:(NSString *)bundleID;
++ (BOOL)hooked_restoreDragAvatarForBundleID:(NSString *)bundleID;
++ (BOOL)hooked_rewriteFileWithStatus;
++ (void)hooked_rewriteFile;
++ (BOOL)hooked_applyVisuals:(id)arg;
++ (BOOL)hooked_restoreVisualsForBundleID:(NSString *)bundleID;
++ (BOOL)hooked_forceRestoreVisualsForBundleID:(NSString *)bundleID;
++ (BOOL)hooked_forceRestoreOriginalForBundleID:(NSString *)bundleID;
++ (BOOL)hooked_forceRestoreOriginalAll;
++ (BOOL)hooked_restoreAll;
++ (BOOL)hooked_restoreAllBackups;
 @end
 
 @interface FFFileReplacementEngine : NSObject
@@ -956,9 +951,6 @@ static const NSUInteger kCandidateSubpathsCount = 10;
 @end
 
 #pragma mark - ProxyESPConfig Swizzle Implementation
-
-@interface ProxyESPConfigHook : NSObject
-@end
 
 @implementation ProxyESPConfigHook
 
@@ -2020,7 +2012,34 @@ static void PresentAuthGate(void);
 
 @end
 
-#pragma mark - Safe Presentation Hook
+#pragma mark - Hook & Presentation Initializers
+
+static void InstallAuthHooks(void) {
+    Class coreClass = NSClassFromString(@"FluckAuthCore");
+    if (coreClass) {
+        SwizzleInstance(coreClass, NSSelectorFromString(@"savedKey"), [FluckAuthCoreHook class], @selector(hooked_savedKey));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"packageName"), [FluckAuthCoreHook class], @selector(hooked_packageName));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"expiryText"), [FluckAuthCoreHook class], @selector(hooked_expiryText));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"gatePassed"), [FluckAuthCoreHook class], @selector(hooked_gatePassed));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"revokeGateWithReason:"), [FluckAuthCoreHook class], @selector(hooked_revokeGateWithReason:));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"revokeAndDie:label:"), [FluckAuthCoreHook class], @selector(hooked_revokeAndDie:label:));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"failAndDie:"), [FluckAuthCoreHook class], @selector(hooked_failAndDie:));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"startKeyWatchdog"), [FluckAuthCoreHook class], @selector(hooked_startKeyWatchdog));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"startHeartbeat"), [FluckAuthCoreHook class], @selector(hooked_startHeartbeat));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"startPulse"), [FluckAuthCoreHook class], @selector(hooked_startPulse));
+        SwizzleInstance(coreClass, NSSelectorFromString(@"checkPackageWithCompletion:"), [FluckAuthCoreHook class], @selector(hooked_checkPackageWithCompletion:));
+        NSLog(@"[AuthGate] FluckAuthCore complete runtime swizzles installed successfully");
+    }
+    
+    Class patchClass = NSClassFromString(@"ProxyPatchBytes");
+    if (patchClass) {
+        SwizzleClassMethod(patchClass, NSSelectorFromString(@"bytesForPatch:"), [ProxyPatchBytesHook class], @selector(hooked_bytesForPatch:));
+        SwizzleInstance(patchClass, NSSelectorFromString(@"bytesForPatch:"), [ProxyPatchBytesHook class], @selector(instance_hooked_bytesForPatch:));
+        NSLog(@"[AuthGate] ProxyPatchBytes live streaming swizzles installed successfully");
+    }
+    
+    [FFFileReplacementEngine installFileReplacementHooks];
+}
 
 static void PresentAuthGate(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
