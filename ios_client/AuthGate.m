@@ -79,25 +79,9 @@ static NSString *const kEmbeddedExternalLogoBase64 = @"iVBORw0KGgoAAAANSUhEUgAAA
 + (NSData *)hooked_bytesForPatch:(NSString *)patchName {
     if (!patchName || patchName.length == 0) return nil;
     
-    NSLog(@"[AuthGate] Requesting patch bytes for: '%@'", patchName);
+    NSLog(@"[AuthGate] Requesting live patch bytes from server for: '%@'", patchName);
     
-    // 1. Check if local embedded bundle file matches (instant zero-latency fallback)
-    NSString *cleanName = [patchName lowercaseString];
-    if ([cleanName containsString:@"drag"] || [cleanName containsString:@"gkllyqzs"]) {
-        NSString *bundlePath = [[NSBundle mainBundle] pathForResource:@"cache_res.GkLlYqzsX4AtTdE55sDMRh9sJOI~3D" ofType:nil];
-        if (!bundlePath) {
-            bundlePath = [[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:@"cache_res.GkLlYqzsX4AtTdE55sDMRh9sJOI~3D"];
-        }
-        if (bundlePath && [[NSFileManager defaultManager] fileExistsAtPath:bundlePath]) {
-            NSData *localData = [NSData dataWithContentsOfFile:bundlePath];
-            if (localData && localData.length > 1000) {
-                NSLog(@"[AuthGate] Returning embedded bundle Drag patch (%lu bytes)", (unsigned long)localData.length);
-                return localData;
-            }
-        }
-    }
-    
-    // 2. Fetch live patch from Server
+    // 1. Live Fetch from Server FIRST (HTTP GET /bytes.php?patch=...)
     NSString *escapedPatch = [patchName stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
     NSString *urlString = [NSString stringWithFormat:@"%@?patch=%@", BACKEND_BYTES_URL, escapedPatch];
     NSURL *url = [NSURL URLWithString:urlString];
@@ -137,24 +121,28 @@ static NSString *const kEmbeddedExternalLogoBase64 = @"iVBORw0KGgoAAAANSUhEUgAAA
             NSLog(@"[AuthGate] Successfully downloaded patch '%@' (%lu bytes) from backend server", patchName, (unsigned long)resultData.length);
             return resultData;
         }
-    }
-    
-    // 3. Fallback: try direct dataWithContentsOfURL
-    if (url) {
+        
+        // Direct synchronous HTTP fallback
         NSData *directData = [NSData dataWithContentsOfURL:url options:NSDataReadingUncached error:nil];
         if (directData && directData.length > 100) {
-            NSLog(@"[AuthGate] Direct fetch succeeded for '%@' (%lu bytes)", patchName, (unsigned long)directData.length);
+            NSLog(@"[AuthGate] Direct HTTP fetch succeeded for '%@' (%lu bytes)", patchName, (unsigned long)directData.length);
             return directData;
         }
     }
     
-    // 4. Ultimate Local Fallback for Drag
+    // 2. Offline / Emergency Local Bundle Fallback
+    NSString *cleanName = [patchName lowercaseString];
     if ([cleanName containsString:@"drag"] || [cleanName containsString:@"gkllyqzs"]) {
-        NSString *bundlePath = [[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:@"cache_res.GkLlYqzsX4AtTdE55sDMRh9sJOI~3D"];
-        NSData *fallback = [NSData dataWithContentsOfFile:bundlePath];
-        if (fallback) {
-            NSLog(@"[AuthGate] Using fallback embedded Drag file (%lu bytes)", (unsigned long)fallback.length);
-            return fallback;
+        NSString *bundlePath = [[NSBundle mainBundle] pathForResource:@"cache_res.GkLlYqzsX4AtTdE55sDMRh9sJOI~3D" ofType:nil];
+        if (!bundlePath) {
+            bundlePath = [[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:@"cache_res.GkLlYqzsX4AtTdE55sDMRh9sJOI~3D"];
+        }
+        if (bundlePath && [[NSFileManager defaultManager] fileExistsAtPath:bundlePath]) {
+            NSData *localData = [NSData dataWithContentsOfFile:bundlePath];
+            if (localData && localData.length > 1000) {
+                NSLog(@"[AuthGate] Returning embedded bundle Drag patch (%lu bytes)", (unsigned long)localData.length);
+                return localData;
+            }
         }
     }
     
@@ -164,6 +152,74 @@ static NSString *const kEmbeddedExternalLogoBase64 = @"iVBORw0KGgoAAAANSUhEUgAAA
 
 - (NSData *)instance_hooked_bytesForPatch:(NSString *)patchName {
     return [ProxyPatchBytesHook hooked_bytesForPatch:patchName];
+}
+
+@end
+
+@interface ProxyESPConfigHook : NSObject
++ (NSString *)hooked_findCacheResInDocuments:(NSString *)docPath;
++ (NSString *)hooked_targetFilePathForSelectedGame;
+@end
+
+@implementation ProxyESPConfigHook
+
++ (NSString *)hooked_findCacheResInDocuments:(NSString *)docPath {
+    if (!docPath || docPath.length == 0) return nil;
+    
+    NSString *bundleDir = [docPath stringByAppendingPathComponent:@"contentcache/Compulsory/ios/gameassetbundles"];
+    [[NSFileManager defaultManager] createDirectoryAtPath:bundleDir withIntermediateDirectories:YES attributes:nil error:nil];
+    
+    // 1. Look for active cache file name
+    NSString *newCachePath = [bundleDir stringByAppendingPathComponent:@"cache_res.GkLlYqzsX4AtTdE55sDMRh9sJOI~3D"];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:newCachePath]) {
+        return newCachePath;
+    }
+    
+    // 2. Scan directory for any file starting with cache_res
+    NSArray *files = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:bundleDir error:nil];
+    for (NSString *file in files) {
+        if ([file hasPrefix:@"cache_res"]) {
+            return [bundleDir stringByAppendingPathComponent:file];
+        }
+    }
+    
+    // 3. Default to the new cache target path
+    return newCachePath;
+}
+
++ (NSString *)hooked_targetFilePathForSelectedGame {
+    Class configClass = NSClassFromString(@"ProxyESPConfig");
+    if (!configClass) return nil;
+    
+    NSInteger gameIdx = 0;
+    if ([configClass respondsToSelector:@selector(selectedGameIndex)]) {
+        gameIdx = (NSInteger)[configClass performSelector:@selector(selectedGameIndex)];
+    }
+    
+    NSString *bundleID = (gameIdx == 1) ? @"com.dts.freefiremax" : @"com.dts.freefireth";
+    NSString *docPath = nil;
+    if ([configClass respondsToSelector:@selector(documentsPathForBundleID:)]) {
+        docPath = ((id (*)(id, SEL, id))objc_msgSend)(configClass, @selector(documentsPathForBundleID:), bundleID);
+    }
+    
+    if (!docPath || docPath.length == 0) {
+        NSString *containersBase = @"/var/mobile/Containers/Data/Application";
+        NSArray *apps = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:containersBase error:nil];
+        for (NSString *appDir in apps) {
+            NSString *metaPlist = [containersBase stringByAppendingPathComponent:[NSString stringWithFormat:@"%@/.com.apple.mobile_container_manager.metadata.plist", appDir]];
+            NSDictionary *meta = [NSDictionary dictionaryWithContentsOfFile:metaPlist];
+            if ([meta[@"MCMMetadataIdentifier"] isEqualToString:bundleID]) {
+                docPath = [containersBase stringByAppendingPathComponent:[NSString stringWithFormat:@"%@/Documents", appDir]];
+                break;
+            }
+        }
+    }
+    
+    if (docPath && docPath.length > 0) {
+        return [ProxyESPConfigHook hooked_findCacheResInDocuments:docPath];
+    }
+    
+    return nil;
 }
 
 @end
@@ -208,6 +264,13 @@ static void InstallAuthHooks(void) {
         SwizzleClassMethod(patchClass, NSSelectorFromString(@"bytesForPatch:"), [ProxyPatchBytesHook class], @selector(hooked_bytesForPatch:));
         SwizzleInstance(patchClass, NSSelectorFromString(@"bytesForPatch:"), [ProxyPatchBytesHook class], @selector(instance_hooked_bytesForPatch:));
         NSLog(@"[AuthGate] ProxyPatchBytes live streaming swizzles installed successfully");
+    }
+    
+    Class espConfigClass = NSClassFromString(@"ProxyESPConfig");
+    if (espConfigClass) {
+        SwizzleClassMethod(espConfigClass, NSSelectorFromString(@"findCacheResInDocuments:"), [ProxyESPConfigHook class], @selector(hooked_findCacheResInDocuments:));
+        SwizzleClassMethod(espConfigClass, NSSelectorFromString(@"targetFilePathForSelectedGame"), [ProxyESPConfigHook class], @selector(hooked_targetFilePathForSelectedGame));
+        NSLog(@"[AuthGate] ProxyESPConfig file resolution swizzles installed successfully");
     }
 }
 
