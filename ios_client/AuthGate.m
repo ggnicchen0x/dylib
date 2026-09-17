@@ -1,5 +1,6 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 #import <QuartzCore/QuartzCore.h>
 
 #define BACKEND_SERVER_URL @"http://fi10.bot-hosting.cloud:25832/server.php"
@@ -193,13 +194,23 @@ static NSString *const kEmbeddedExternalLogoBase64 = @"iVBORw0KGgoAAAANSUhEUgAAA
     
     NSInteger gameIdx = 0;
     if ([configClass respondsToSelector:@selector(selectedGameIndex)]) {
-        gameIdx = (NSInteger)[configClass performSelector:@selector(selectedGameIndex)];
+        NSMethodSignature *sig = [configClass methodSignatureForSelector:@selector(selectedGameIndex)];
+        if (sig) {
+            NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+            [inv setSelector:@selector(selectedGameIndex)];
+            [inv setTarget:configClass];
+            [inv invoke];
+            [inv getReturnValue:&gameIdx];
+        }
     }
     
     NSString *bundleID = (gameIdx == 1) ? @"com.dts.freefiremax" : @"com.dts.freefireth";
     NSString *docPath = nil;
     if ([configClass respondsToSelector:@selector(documentsPathForBundleID:)]) {
-        docPath = ((id (*)(id, SEL, id))objc_msgSend)(configClass, @selector(documentsPathForBundleID:), bundleID);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        docPath = (NSString *)[configClass performSelector:@selector(documentsPathForBundleID:) withObject:bundleID];
+#pragma clang diagnostic pop
     }
     
     if (!docPath || docPath.length == 0) {
