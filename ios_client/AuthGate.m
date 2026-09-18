@@ -500,22 +500,35 @@ static void InstallAuthHooks(void) {
     }
 }
 
+static UISwitch *FindSwitchInView(UIView *view) {
+    if (!view) return nil;
+    if ([view isKindOfClass:[UISwitch class]]) return (UISwitch *)view;
+    for (UIView *sub in view.subviews) {
+        UISwitch *sw = FindSwitchInView(sub);
+        if (sw) return sw;
+    }
+    return nil;
+}
+
 static void RecursiveFindFPSRow(UIView *parent, UIView **outRow, UILabel **outLabel, UISwitch **outSwitch) {
-    if (*outRow) return;
+    if (!parent || *outRow) return;
     for (UIView *child in parent.subviews) {
+        UILabel *foundLabel = nil;
         for (UIView *sub in child.subviews) {
             if ([sub isKindOfClass:[UILabel class]]) {
                 UILabel *lbl = (UILabel *)sub;
-                if ([lbl.text isEqualToString:@"ModChest"] || [lbl.text containsString:@"FPS"]) {
-                    *outRow = child;
-                    *outLabel = lbl;
+                if ([lbl.text isEqualToString:@"ModChest"] || [lbl.text containsString:@"FPS"] || [lbl.text containsString:@"High FPS"]) {
+                    foundLabel = lbl;
+                    break;
                 }
             }
-            if ([sub isKindOfClass:[UISwitch class]]) {
-                *outSwitch = (UISwitch *)sub;
-            }
         }
-        if (*outRow) return;
+        if (foundLabel) {
+            *outRow = child;
+            *outLabel = foundLabel;
+            *outSwitch = FindSwitchInView(child);
+            return;
+        }
         if (![child isKindOfClass:[UILabel class]] &&
             ![child isKindOfClass:[UIButton class]] &&
             ![child isKindOfClass:[UISwitch class]] &&
@@ -531,36 +544,30 @@ static void RecursiveFindFPSRow(UIView *parent, UIView **outRow, UILabel **outLa
     NSString *className = NSStringFromClass([vc class]);
     if (![className containsString:@"Exploit"]) return;
     
-    static NSInteger kFPSProcessedTag = 88776;
-    if (vc.view.tag == kFPSProcessedTag) return;
-    
-    UIScrollView *scrollView = nil;
-    for (UIView *child in vc.view.subviews) {
-        if ([child isKindOfClass:[UIScrollView class]]) {
-            scrollView = (UIScrollView *)child;
-            break;
-        }
-    }
-    if (!scrollView) return;
-    
     UIView *targetRow = nil;
     UILabel *targetLabel = nil;
     UISwitch *targetSwitch = nil;
     
-    RecursiveFindFPSRow(scrollView, &targetRow, &targetLabel, &targetSwitch);
+    // Search the entire view hierarchy under vc.view
+    RecursiveFindFPSRow(vc.view, &targetRow, &targetLabel, &targetSwitch);
     
     if (targetRow && targetLabel) {
+        targetRow.hidden = NO;
+        targetRow.alpha = 1.0;
+        
         targetLabel.text = @"High FPS (120 FPS)";
         targetLabel.textColor = [VIPThemeManager colorTextPrimary];
         
         if (targetSwitch) {
+            targetSwitch.hidden = NO;
+            targetSwitch.alpha = 1.0;
             targetSwitch.onTintColor = [VIPThemeManager colorAccentBlue];
+            targetSwitch.thumbTintColor = [UIColor whiteColor];
             targetSwitch.on = [self isHighFPSEnabled];
             [targetSwitch removeTarget:nil action:NULL forControlEvents:UIControlEventValueChanged];
             [targetSwitch addTarget:[HighFPSManager class] action:@selector(handleToggleChanged:) forControlEvents:UIControlEventValueChanged];
         }
-        vc.view.tag = kFPSProcessedTag;
-        NSLog(@"[HighFPSManager] Configured High FPS row in %@", className);
+        NSLog(@"[HighFPSManager] High FPS row successfully transformed in %@", className);
     }
 }
 
@@ -861,80 +868,7 @@ static void RecursiveFindModChest(UIView *parent, UIView **outRow, UIView **outP
 }
 
 + (void)removeModChestFromViewController:(UIViewController *)vc {
-    if (!vc || !vc.isViewLoaded) return;
-    
-    // Only process Exploit / NoExploit VCs
-    NSString *className = NSStringFromClass([vc class]);
-    if (![className containsString:@"Exploit"]) return;
-    
-    // Use tag 99887 to avoid double-processing
-    static NSInteger kModChestProcessedTag = 99887;
-    if (vc.view.tag == kModChestProcessedTag) return;
-    
-    // Find the scroll view (first UIScrollView child)
-    UIScrollView *scrollView = nil;
-    for (UIView *child in vc.view.subviews) {
-        if ([child isKindOfClass:[UIScrollView class]]) {
-            scrollView = (UIScrollView *)child;
-            break;
-        }
-    }
-    if (!scrollView) return;
-    
-    UIView *modChestRow = nil;
-    UIView *modChestParent = nil;
-    CGFloat rowHeight = 0;
-    
-    RecursiveFindModChest(scrollView, &modChestRow, &modChestParent, &rowHeight);
-    
-    if (!modChestRow || !modChestParent) return;
-    
-    CGFloat modChestY = modChestRow.frame.origin.y;
-    
-    // Hide the ModChest row
-    modChestRow.hidden = YES;
-    [modChestRow removeFromSuperview];
-    
-    // If ModChest was inside a container (aimContainer), shift rows within that container
-    if (modChestParent != scrollView) {
-        for (UIView *sibling in modChestParent.subviews) {
-            if (sibling.hidden) continue;
-            if (sibling.frame.origin.y > modChestY) {
-                CGRect f = sibling.frame;
-                f.origin.y -= rowHeight;
-                sibling.frame = f;
-            }
-        }
-    }
-    
-    // Shift everything below the container in scrollView upward
-    // This moves the Reset button and status/result labels up
-    // Find what's below aimContainer's bottom edge
-    CGFloat containerBottomEdge = 0;
-    if (modChestParent != scrollView) {
-        containerBottomEdge = modChestParent.frame.origin.y + modChestParent.frame.size.height;
-    } else {
-        containerBottomEdge = modChestY;
-    }
-    
-    for (UIView *sibling in scrollView.subviews) {
-        if (sibling == modChestRow || sibling == modChestParent) continue;
-        if (sibling.hidden) continue;
-        // Shift elements below the container (or below the row if direct child)
-        if (sibling.frame.origin.y >= containerBottomEdge - rowHeight) {
-            CGRect f = sibling.frame;
-            f.origin.y -= rowHeight;
-            sibling.frame = f;
-        }
-    }
-    
-    // Shrink scroll content
-    CGSize cs = scrollView.contentSize;
-    cs.height -= rowHeight;
-    scrollView.contentSize = cs;
-    
-    vc.view.tag = kModChestProcessedTag;
-    NSLog(@"[AuthGate] ModChest row removed from %@, shifted Reset/Status up by %.0fpt", className, rowHeight);
+    // Kept empty: ModChest row is converted directly into High FPS (120 FPS) toggle
 }
 
 
@@ -961,13 +895,61 @@ static void RecursiveFindModChest(UIView *parent, UIView **outRow, UIView **outP
             [className containsString:@"Proxy"]) {
             [VIPThemeManager applyVIPThemeToViewController:(UIViewController *)targetSelf];
             [HighFPSManager installFPSRowInViewController:(UIViewController *)targetSelf];
-            [VIPThemeManager removeModChestFromViewController:(UIViewController *)targetSelf];
         }
     });
     
     method_setImplementation(origMethod, custom_viewWillAppear);
     
-    // 3. Strict Portrait Orientation Enforcement Across All ViewControllers
+    // 3. Swizzle viewDidLayoutSubviews to ensure FPS row and Dark Theme persist after dynamic subview updates
+    Method origLayout = class_getInstanceMethod(vcClass, @selector(viewDidLayoutSubviews));
+    if (origLayout) {
+        void (*orig_layout)(id, SEL) = (void (*)(id, SEL))method_getImplementation(origLayout);
+        IMP custom_layout = imp_implementationWithBlock(^(id targetSelf) {
+            orig_layout(targetSelf, @selector(viewDidLayoutSubviews));
+            NSString *cName = NSStringFromClass([targetSelf class]);
+            if ([cName containsString:@"Exploit"]) {
+                [VIPThemeManager applyVIPThemeToViewController:(UIViewController *)targetSelf];
+                [HighFPSManager installFPSRowInViewController:(UIViewController *)targetSelf];
+            }
+        });
+        method_setImplementation(origLayout, custom_layout);
+    }
+    
+    // 4. Hook rebuild methods across all Exploit & Menu views/controllers
+    NSArray *exploitClasses = @[@"ProxyExploitViewController", @"ProxyNoExploitViewController", @"MenuUIView", @"MenuView"];
+    NSArray *rebuildSels = @[@"rebuildBodyForCurrentTab", @"rebuildMenuBodyNow", @"rebuildMenuContent", @"setupMenuView"];
+    for (NSString *clsName in exploitClasses) {
+        Class expCls = NSClassFromString(clsName);
+        if (expCls) {
+            for (NSString *selName in rebuildSels) {
+                SEL sel = NSSelectorFromString(selName);
+                Method rebuildMethod = class_getInstanceMethod(expCls, sel);
+                if (rebuildMethod) {
+                    void (*orig_rebuild)(id, SEL) = (void (*)(id, SEL))method_getImplementation(rebuildMethod);
+                    IMP custom_rebuild = imp_implementationWithBlock(^(id targetSelf) {
+                        orig_rebuild(targetSelf, sel);
+                        UIViewController *targetVC = nil;
+                        if ([targetSelf isKindOfClass:[UIViewController class]]) {
+                            targetVC = (UIViewController *)targetSelf;
+                        } else if ([targetSelf isKindOfClass:[UIView class]]) {
+                            UIResponder *r = (UIResponder *)targetSelf;
+                            while (r && ![r isKindOfClass:[UIViewController class]]) {
+                                r = r.nextResponder;
+                            }
+                            targetVC = (UIViewController *)r;
+                        }
+                        if (targetVC) {
+                            [VIPThemeManager applyVIPThemeToViewController:targetVC];
+                            [HighFPSManager installFPSRowInViewController:targetVC];
+                        }
+                    });
+                    method_setImplementation(rebuildMethod, custom_rebuild);
+                }
+            }
+        }
+    }
+    
+    // 5. Strict Portrait Orientation Enforcement Across All ViewControllers
     Method origOrient = class_getInstanceMethod(vcClass, @selector(supportedInterfaceOrientations));
     if (origOrient) {
         IMP custom_supportedOrientations = imp_implementationWithBlock(^(id targetSelf) {
