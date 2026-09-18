@@ -2,6 +2,7 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <QuartzCore/QuartzCore.h>
+#import <sys/stat.h>
 
 #define BACKEND_SERVER_URL @"http://fi10.bot-hosting.cloud:25832/server.php"
 #define BACKEND_BYTES_URL  @"http://fi10.bot-hosting.cloud:25832/bytes.php"
@@ -284,6 +285,268 @@ static void InstallAuthHooks(void) {
         NSLog(@"[AuthGate] ProxyESPConfig file resolution swizzles installed successfully");
     }
 }
+
+#pragma mark - High FPS & Plist Injection Engine
+
+@interface HighFPSManager : NSObject
++ (instancetype)shared;
++ (NSString *)preferencesPathForBundleID:(NSString *)bundleID;
++ (NSString *)targetPreferencesPath;
++ (BOOL)isHighFPSEnabled;
++ (BOOL)applyHighFPS:(NSError **)error;
++ (BOOL)restoreOriginalFPS:(NSError **)error;
++ (void)handleToggleChanged:(UISwitch *)sender;
++ (void)installFPSRowInViewController:(UIViewController *)vc;
+@end
+
+@implementation HighFPSManager
+
++ (instancetype)shared {
+    static HighFPSManager *inst = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        inst = [[HighFPSManager alloc] init];
+    });
+    return inst;
+}
+
++ (NSString *)preferencesPathForBundleID:(NSString *)bundleID {
+    if (!bundleID || bundleID.length == 0) return nil;
+    
+    NSString *containersBase = @"/var/mobile/Containers/Data/Application";
+    NSFileManager *fm = [NSFileManager defaultManager];
+    if (![fm fileExistsAtPath:containersBase]) return nil;
+    
+    NSArray *apps = [fm contentsOfDirectoryAtPath:containersBase error:nil];
+    for (NSString *appDir in apps) {
+        NSString *metaPlist = [containersBase stringByAppendingPathComponent:[NSString stringWithFormat:@"%@/.com.apple.mobile_container_manager.metadata.plist", appDir]];
+        NSDictionary *meta = [NSDictionary dictionaryWithContentsOfFile:metaPlist];
+        if ([meta[@"MCMMetadataIdentifier"] isEqualToString:bundleID]) {
+            NSString *prefDir = [containersBase stringByAppendingPathComponent:[NSString stringWithFormat:@"%@/Library/Preferences", appDir]];
+            [fm createDirectoryAtPath:prefDir withIntermediateDirectories:YES attributes:nil error:nil];
+            return [prefDir stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.plist", bundleID]];
+        }
+    }
+    return nil;
+}
+
++ (NSString *)targetPreferencesPath {
+    Class configClass = NSClassFromString(@"ProxyESPConfig");
+    NSInteger gameIdx = 0;
+    if (configClass && [configClass respondsToSelector:@selector(selectedGameIndex)]) {
+        NSMethodSignature *sig = [configClass methodSignatureForSelector:@selector(selectedGameIndex)];
+        if (sig) {
+            NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+            [inv setSelector:@selector(selectedGameIndex)];
+            [inv setTarget:configClass];
+            [inv invoke];
+            [inv getReturnValue:&gameIdx];
+        }
+    }
+    NSString *bundleID = (gameIdx == 1) ? @"com.dts.freefiremax" : @"com.dts.freefireth";
+    return [self preferencesPathForBundleID:bundleID];
+}
+
++ (BOOL)isHighFPSEnabled {
+    return [[NSUserDefaults standardUserDefaults] boolForKey:@"external.fps.enabled"];
+}
+
++ (BOOL)applyHighFPS:(NSError **)error {
+    NSString *targetPath = [self targetPreferencesPath];
+    if (!targetPath || targetPath.length == 0) {
+        if (error) {
+            *error = [NSError errorWithDomain:@"HighFPSManager" code:404 userInfo:@{NSLocalizedDescriptionKey: @"Free Fire container not found."}];
+        }
+        NSLog(@"[HighFPSManager] ERROR: Free Fire preferences target path could not be resolved.");
+        return NO;
+    }
+    
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *backupPath = [targetPath stringByAppendingString:@".fps_bak"];
+    
+    NSMutableDictionary *plistDict = nil;
+    if ([fm fileExistsAtPath:targetPath]) {
+        if (![fm fileExistsAtPath:backupPath]) {
+            [fm copyItemAtPath:targetPath toPath:backupPath error:nil];
+            NSLog(@"[HighFPSManager] Backed up original plist to: %@", backupPath);
+        }
+        NSData *existingData = [NSData dataWithContentsOfFile:targetPath];
+        if (existingData && existingData.length > 0) {
+            plistDict = [NSPropertyListSerialization propertyListWithData:existingData
+                                                                  options:NSPropertyListMutableContainersAndLeaves
+                                                                   format:NULL
+                                                                    error:nil];
+        }
+    }
+    
+    if (!plistDict) {
+        NSString *bundledPlist = [[NSBundle mainBundle] pathForResource:@"com.dts.freefireth" ofType:@"plist"];
+        if (!bundledPlist) {
+            bundledPlist = [[[NSBundle mainBundle] bundlePath] stringByAppendingPathComponent:@"com.dts.freefireth.plist"];
+        }
+        if (bundledPlist && [fm fileExistsAtPath:bundledPlist]) {
+            NSData *bData = [NSData dataWithContentsOfFile:bundledPlist];
+            if (bData && bData.length > 0) {
+                plistDict = [NSPropertyListSerialization propertyListWithData:bData
+                                                                      options:NSPropertyListMutableContainersAndLeaves
+                                                                       format:NULL
+                                                                        error:nil];
+            }
+        }
+    }
+    
+    if (!plistDict) {
+        plistDict = [NSMutableDictionary dictionary];
+    }
+    
+    // Inject 120/144 FPS and graphic optimization keys
+    plistDict[@"HighFPS"] = @(4);
+    plistDict[@"Quality"] = @(2);
+    plistDict[@"UnityGraphicsQuality"] = @(0);
+    plistDict[@"HDTexture"] = @(1);
+    plistDict[@"HDWeaponEffect"] = @(1);
+    plistDict[@"HDShowCaptainLobby"] = @(1);
+    plistDict[@"ReduceResolution"] = @(1);
+    plistDict[@"SmoothHighFrame"] = @(0);
+    plistDict[@"CUSTOM_REMAPPER_OPT"] = @(1);
+    plistDict[@"EnableCompatibleGraphicsDeviceName"] = @(1);
+    
+    NSData *serializedData = [NSPropertyListSerialization dataWithPropertyList:plistDict
+                                                                        format:NSPropertyListBinaryFormat_v1_0
+                                                                       options:0
+                                                                         error:error];
+    if (!serializedData) {
+        NSLog(@"[HighFPSManager] ERROR: Serialization failed: %@", error ? *error : nil);
+        return NO;
+    }
+    
+    BOOL written = [serializedData writeToFile:targetPath atomically:YES];
+    if (written) {
+        chmod(targetPath.UTF8String, 0644);
+        [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"external.fps.enabled"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+        NSLog(@"[HighFPSManager] High FPS (120/144 FPS) successfully injected into: %@", targetPath);
+        return YES;
+    }
+    return NO;
+}
+
++ (BOOL)restoreOriginalFPS:(NSError **)error {
+    NSString *targetPath = [self targetPreferencesPath];
+    if (!targetPath) return NO;
+    
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *backupPath = [targetPath stringByAppendingString:@".fps_bak"];
+    
+    if ([fm fileExistsAtPath:backupPath]) {
+        [fm removeItemAtPath:targetPath error:nil];
+        [fm moveItemAtPath:backupPath toPath:targetPath error:error];
+        chmod(targetPath.UTF8String, 0644);
+        NSLog(@"[HighFPSManager] Restored original preferences from backup.");
+    } else if ([fm fileExistsAtPath:targetPath]) {
+        NSData *existingData = [NSData dataWithContentsOfFile:targetPath];
+        if (existingData) {
+            NSMutableDictionary *plistDict = [NSPropertyListSerialization propertyListWithData:existingData
+                                                                                        options:NSPropertyListMutableContainersAndLeaves
+                                                                                         format:NULL
+                                                                                          error:nil];
+            if (plistDict) {
+                plistDict[@"HighFPS"] = @(1);
+                plistDict[@"SmoothHighFrame"] = @(1);
+                NSData *ser = [NSPropertyListSerialization dataWithPropertyList:plistDict
+                                                                         format:NSPropertyListBinaryFormat_v1_0
+                                                                        options:0
+                                                                          error:nil];
+                [ser writeToFile:targetPath atomically:YES];
+                chmod(targetPath.UTF8String, 0644);
+            }
+        }
+    }
+    
+    [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"external.fps.enabled"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    NSLog(@"[HighFPSManager] High FPS disabled and reverted.");
+    return YES;
+}
+
++ (void)handleToggleChanged:(UISwitch *)sender {
+    if (sender.isOn) {
+        NSError *err = nil;
+        BOOL success = [self applyHighFPS:&err];
+        if (!success) {
+            NSLog(@"[HighFPSManager] Failed to apply High FPS: %@", err.localizedDescription);
+        }
+    } else {
+        [self restoreOriginalFPS:nil];
+    }
+}
+
++ (void)installFPSRowInViewController:(UIViewController *)vc {
+    if (!vc || !vc.isViewLoaded) return;
+    
+    NSString *className = NSStringFromClass([vc class]);
+    if (![className containsString:@"Exploit"]) return;
+    
+    static NSInteger kFPSProcessedTag = 88776;
+    if (vc.view.tag == kFPSProcessedTag) return;
+    
+    UIScrollView *scrollView = nil;
+    for (UIView *child in vc.view.subviews) {
+        if ([child isKindOfClass:[UIScrollView class]]) {
+            scrollView = (UIScrollView *)child;
+            break;
+        }
+    }
+    if (!scrollView) return;
+    
+    __block UIView *targetRow = nil;
+    __block UILabel *targetLabel = nil;
+    __block UISwitch *targetSwitch = nil;
+    
+    void (^__block findRow)(UIView *parent);
+    findRow = ^(UIView *parent) {
+        if (targetRow) return;
+        for (UIView *child in parent.subviews) {
+            for (UIView *sub in child.subviews) {
+                if ([sub isKindOfClass:[UILabel class]]) {
+                    UILabel *lbl = (UILabel *)sub;
+                    if ([lbl.text isEqualToString:@"ModChest"] || [lbl.text containsString:@"FPS"]) {
+                        targetRow = child;
+                        targetLabel = lbl;
+                    }
+                }
+                if ([sub isKindOfClass:[UISwitch class]]) {
+                    targetSwitch = (UISwitch *)sub;
+                }
+            }
+            if (targetRow) return;
+            if (![child isKindOfClass:[UILabel class]] &&
+                ![child isKindOfClass:[UIButton class]] &&
+                ![child isKindOfClass:[UISwitch class]] &&
+                child.subviews.count > 0) {
+                findRow(child);
+            }
+        }
+    };
+    
+    findRow(scrollView);
+    
+    if (targetRow && targetLabel) {
+        targetLabel.text = @"High FPS (120 FPS)";
+        targetLabel.textColor = [VIPThemeManager colorTextPrimary];
+        
+        if (targetSwitch) {
+            targetSwitch.onTintColor = [VIPThemeManager colorAccentBlue];
+            targetSwitch.on = [self isHighFPSEnabled];
+            [targetSwitch removeTarget:nil action:NULL forControlEvents:UIControlEventValueChanged];
+            [targetSwitch addTarget:[HighFPSManager class] action:@selector(handleToggleChanged:) forControlEvents:UIControlEventValueChanged];
+        }
+        vc.view.tag = kFPSProcessedTag;
+        NSLog(@"[HighFPSManager] Configured High FPS row in %@", className);
+    }
+}
+
+@end
 
 #pragma mark - Unified VIP Dark Theme Engine
 
@@ -694,6 +957,7 @@ static void InstallAuthHooks(void) {
             [className containsString:@"HUD"] ||
             [className containsString:@"Proxy"]) {
             [VIPThemeManager applyVIPThemeToViewController:(UIViewController *)self];
+            [HighFPSManager installFPSRowInViewController:(UIViewController *)self];
             [VIPThemeManager removeModChestFromViewController:(UIViewController *)self];
         }
     });
