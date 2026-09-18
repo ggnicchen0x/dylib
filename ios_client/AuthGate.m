@@ -503,7 +503,7 @@ static void InstallAuthHooks(void) {
     __block UILabel *targetLabel = nil;
     __block UISwitch *targetSwitch = nil;
     
-    void (^__block findRow)(UIView *parent);
+    __block void (^findRow)(UIView *parent);
     findRow = ^(UIView *parent) {
         if (targetRow) return;
         for (UIView *child in parent.subviews) {
@@ -855,7 +855,7 @@ static void InstallAuthHooks(void) {
     __block CGFloat rowHeight = 0;
     
     // Recursive block to find ModChest row
-    void (^__block findModChest)(UIView *parent);
+    __block void (^findModChest)(UIView *parent);
     findModChest = ^(UIView *parent) {
         if (modChestRow) return; // already found
         for (UIView *child in parent.subviews) {
@@ -1365,6 +1365,8 @@ static void InstallAuthHooks(void) {
                 
                 Class coreClass = NSClassFromString(@"FluckAuthCore");
                 if (coreClass) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
                     id sharedCore = [coreClass performSelector:NSSelectorFromString(@"shared")];
                     if (sharedCore && [sharedCore respondsToSelector:NSSelectorFromString(@"saveKey:")]) {
                         [sharedCore performSelector:NSSelectorFromString(@"saveKey:") withObject:key];
@@ -1372,6 +1374,7 @@ static void InstallAuthHooks(void) {
                     if (sharedCore && [sharedCore respondsToSelector:NSSelectorFromString(@"markGatePassed")]) {
                         [sharedCore performSelector:NSSelectorFromString(@"markGatePassed")];
                     }
+#pragma clang diagnostic pop
                 }
                 
                 [self updateStatus:@"Activated successfully! Launching..." isError:NO];
@@ -1401,7 +1404,10 @@ static void InstallAuthHooks(void) {
         self.view.alpha = 0.0;
         self.view.transform = CGAffineTransformMakeScale(1.05, 1.05);
     } completion:^(BOOL finished) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         UIWindow *window = [UIApplication sharedApplication].keyWindow ?: [UIApplication sharedApplication].windows.firstObject;
+#pragma clang diagnostic pop
         if (self.originalRootVC) {
             window.rootViewController = self.originalRootVC;
             [VIPThemeManager applyVIPThemeToViewController:self.originalRootVC];
@@ -1533,7 +1539,10 @@ static void PresentAuthGate(void);
 
 static void PresentAuthGate(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         UIWindow *window = [UIApplication sharedApplication].keyWindow ?: [UIApplication sharedApplication].windows.firstObject;
+#pragma clang diagnostic pop
         if (!window || !window.rootViewController) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 PresentAuthGate();
