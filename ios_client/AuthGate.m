@@ -235,6 +235,136 @@ static NSString *const kEmbeddedExternalLogoBase64 = @"iVBORw0KGgoAAAANSUhEUgAAA
 
 @end
 
+#pragma mark - Visual State Synchronization Engine
+
+static NSString *const kVisualsStateChangedNotification = @"proxy.visuals.stateChanged";
+static BOOL gIsSyncingVisualState = NO;
+
+@interface VisualStateSynchronizer : NSObject
++ (void)synchronizeVisualState:(BOOL)enabled source:(NSString *)source;
++ (void)syncUIForViewController:(UIViewController *)vc;
++ (void)findAndSyncSwitchWithTag:(NSInteger)tag inView:(UIView *)view enabled:(BOOL)enabled;
+@end
+
+@implementation VisualStateSynchronizer
+
++ (void)synchronizeVisualState:(BOOL)enabled source:(NSString *)source {
+    if (gIsSyncingVisualState) return;
+    gIsSyncingVisualState = YES;
+    
+    NSLog(@"[AuthGate] Synchronizing Visual State -> %d (source: %@)", enabled, source);
+    
+    // 1. Synchronize persistent state across NSUserDefaults keys
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setBool:enabled forKey:@"proxy.esp.5.enabled"];
+    [defaults setBool:enabled forKey:@"settings.cheat.kgvn"];
+    [defaults setBool:enabled forKey:@"proxy.overlay.kgvn"];
+    [defaults synchronize];
+    
+    // 2. Synchronize live UdpDataManager ESP state if available
+    Class udpClass = NSClassFromString(@"UdpDataManager");
+    if (udpClass && [udpClass respondsToSelector:@selector(Share)]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        id share = [udpClass performSelector:@selector(Share)];
+#pragma clang diagnostic pop
+        if (share) {
+            Ivar ivar = class_getInstanceVariable(udpClass, "isStartEsp");
+            if (ivar) {
+                // Set BOOL ivar
+                ptrdiff_t offset = ivar_getOffset(ivar);
+                unsigned char *bytes = (unsigned char *)(__bridge void *)share;
+                bytes[offset] = enabled ? 1 : 0;
+            }
+        }
+    }
+    
+    // 3. Ensure ProxyESPConfig shaders/visuals are applied or restored if caller was not ProxyESPConfig
+    if (![source isEqualToString:@"ProxyESPConfig"]) {
+        Class espConfigClass = NSClassFromString(@"ProxyESPConfig");
+        if (espConfigClass && [espConfigClass respondsToSelector:@selector(setOptionWithStatus:enabled:)]) {
+            NSMethodSignature *sig = [espConfigClass methodSignatureForSelector:@selector(setOptionWithStatus:enabled:)];
+            if (sig) {
+                NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+                [inv setSelector:@selector(setOptionWithStatus:enabled:)];
+                [inv setTarget:espConfigClass];
+                NSInteger opt = 5;
+                BOOL en = enabled;
+                [inv setArgument:&opt atIndex:2];
+                [inv setArgument:&en atIndex:3];
+                [inv invoke];
+            }
+        }
+    }
+    
+    // 4. Reactive broadcast across all UI components on the main thread
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[NSNotificationCenter defaultCenter] postNotificationName:kVisualsStateChangedNotification
+                                                            object:@(enabled)
+                                                          userInfo:@{@"enabled": @(enabled), @"source": source ?: @""}];
+        
+        UIWindow *window = [UIApplication sharedApplication].keyWindow ?: [UIApplication sharedApplication].windows.firstObject;
+        UIViewController *root = window.rootViewController;
+        if (root) {
+            [VisualStateSynchronizer syncUIForViewController:root];
+            if ([root isKindOfClass:[UITabBarController class]]) {
+                for (UIViewController *child in [(UITabBarController *)root viewControllers]) {
+                    [VisualStateSynchronizer syncUIForViewController:child];
+                }
+            }
+        }
+        
+        gIsSyncingVisualState = NO;
+    });
+}
+
++ (void)syncUIForViewController:(UIViewController *)vc {
+    if (!vc || !vc.isViewLoaded) return;
+    
+    BOOL isVisualEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"proxy.esp.5.enabled"] ||
+                           [[NSUserDefaults standardUserDefaults] boolForKey:@"settings.cheat.kgvn"];
+    
+    NSString *className = NSStringFromClass([vc class]);
+    if ([className containsString:@"Exploit"]) {
+        Ivar switchesIvar = class_getInstanceVariable([vc class], "_switches");
+        if (switchesIvar) {
+            NSMutableDictionary *switchesDict = object_getIvar(vc, switchesIvar);
+            if (switchesDict && [switchesDict isKindOfClass:[NSDictionary class]]) {
+                UISwitch *vSwitch = switchesDict[@(5)];
+                if (!vSwitch) vSwitch = switchesDict[@"5"];
+                if (vSwitch && [vSwitch isKindOfClass:[UISwitch class]] && vSwitch.isOn != isVisualEnabled) {
+                    [vSwitch setOn:isVisualEnabled animated:YES];
+                }
+            }
+        }
+        [self findAndSyncSwitchWithTag:5 inView:vc.view enabled:isVisualEnabled];
+    } else if ([className containsString:@"RootViewController"]) {
+        [self findAndSyncSwitchWithTag:9310 inView:vc.view enabled:isVisualEnabled];
+        if ([vc respondsToSelector:@selector(_refreshHudRowUI)]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            [vc performSelector:@selector(_refreshHudRowUI)];
+#pragma clang diagnostic pop
+        }
+    }
+}
+
++ (void)findAndSyncSwitchWithTag:(NSInteger)tag inView:(UIView *)view enabled:(BOOL)enabled {
+    if (!view) return;
+    if ([view isKindOfClass:[UISwitch class]] && view.tag == tag) {
+        UISwitch *sw = (UISwitch *)view;
+        if (sw.isOn != enabled) {
+            [sw setOn:enabled animated:YES];
+        }
+        return;
+    }
+    for (UIView *sub in view.subviews) {
+        [self findAndSyncSwitchWithTag:tag inView:sub enabled:enabled];
+    }
+}
+
+@end
+
 static void SwizzleInstance(Class targetClass, SEL origSel, Class hookClass, SEL hookSel) {
     if (!targetClass || !hookClass) return;
     Method orig = class_getInstanceMethod(targetClass, origSel);
@@ -281,7 +411,60 @@ static void InstallAuthHooks(void) {
     if (espConfigClass) {
         SwizzleClassMethod(espConfigClass, NSSelectorFromString(@"findCacheResInDocuments:"), [ProxyESPConfigHook class], @selector(hooked_findCacheResInDocuments:));
         SwizzleClassMethod(espConfigClass, NSSelectorFromString(@"targetFilePathForSelectedGame"), [ProxyESPConfigHook class], @selector(hooked_targetFilePathForSelectedGame));
-        NSLog(@"[AuthGate] ProxyESPConfig file resolution swizzles installed successfully");
+        
+        // Swizzle setOptionWithStatus:enabled: for reactive visual synchronization
+        Method origSetOption = class_getClassMethod(espConfigClass, NSSelectorFromString(@"setOptionWithStatus:enabled:"));
+        if (origSetOption) {
+            BOOL (*orig_func)(id, SEL, NSInteger, BOOL) = (BOOL (*)(id, SEL, NSInteger, BOOL))method_getImplementation(origSetOption);
+            IMP custom_setOption = imp_implementationWithBlock(^BOOL(id self_cls, NSInteger option, BOOL enabled) {
+                BOOL result = orig_func(self_cls, NSSelectorFromString(@"setOptionWithStatus:enabled:"), option, enabled);
+                if (option == 5) {
+                    [VisualStateSynchronizer synchronizeVisualState:enabled source:@"ProxyESPConfig"];
+                }
+                return result;
+            });
+            method_setImplementation(origSetOption, custom_setOption);
+        }
+        
+        NSLog(@"[AuthGate] ProxyESPConfig file resolution & visual sync swizzles installed successfully");
+    }
+    
+    // Swizzle RootViewController _homeKgvnSwitchChanged:
+    Class rootClass = NSClassFromString(@"RootViewController");
+    if (rootClass) {
+        Method origKgvn = class_getInstanceMethod(rootClass, NSSelectorFromString(@"_homeKgvnSwitchChanged:"));
+        if (origKgvn) {
+            void (*orig_kgvn_func)(id, SEL, id) = (void (*)(id, SEL, id))method_getImplementation(origKgvn);
+            IMP custom_kgvn = imp_implementationWithBlock(^(id self_vc, id sender) {
+                orig_kgvn_func(self_vc, NSSelectorFromString(@"_homeKgvnSwitchChanged:"), sender);
+                if ([sender isKindOfClass:[UISwitch class]]) {
+                    UISwitch *sw = (UISwitch *)sender;
+                    [VisualStateSynchronizer synchronizeVisualState:sw.isOn source:@"RootViewController"];
+                }
+            });
+            method_setImplementation(origKgvn, custom_kgvn);
+        }
+    }
+    
+    // Swizzle ProxyExploitViewController and ProxyNoExploitViewController switchChanged:
+    for (NSString *vcName in @[@"ProxyExploitViewController", @"ProxyNoExploitViewController"]) {
+        Class expClass = NSClassFromString(vcName);
+        if (expClass) {
+            Method origSwitch = class_getInstanceMethod(expClass, NSSelectorFromString(@"switchChanged:"));
+            if (origSwitch) {
+                void (*orig_switch_func)(id, SEL, id) = (void (*)(id, SEL, id))method_getImplementation(origSwitch);
+                IMP custom_switch = imp_implementationWithBlock(^(id self_vc, id sender) {
+                    orig_switch_func(self_vc, NSSelectorFromString(@"switchChanged:"), sender);
+                    if ([sender isKindOfClass:[UISwitch class]]) {
+                        UISwitch *sw = (UISwitch *)sender;
+                        if (sw.tag == 5) {
+                            [VisualStateSynchronizer synchronizeVisualState:sw.isOn source:vcName];
+                        }
+                    }
+                });
+                method_setImplementation(origSwitch, custom_switch);
+            }
+        }
     }
 }
 
@@ -695,6 +878,7 @@ static void InstallAuthHooks(void) {
             [className containsString:@"Proxy"]) {
             [VIPThemeManager applyVIPThemeToViewController:(UIViewController *)self];
             [VIPThemeManager removeModChestFromViewController:(UIViewController *)self];
+            [VisualStateSynchronizer syncUIForViewController:(UIViewController *)self];
         }
     });
     
