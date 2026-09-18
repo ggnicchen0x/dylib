@@ -481,6 +481,31 @@ static void InstallAuthHooks(void) {
     }
 }
 
+static void RecursiveFindFPSRow(UIView *parent, UIView **outRow, UILabel **outLabel, UISwitch **outSwitch) {
+    if (*outRow) return;
+    for (UIView *child in parent.subviews) {
+        for (UIView *sub in child.subviews) {
+            if ([sub isKindOfClass:[UILabel class]]) {
+                UILabel *lbl = (UILabel *)sub;
+                if ([lbl.text isEqualToString:@"ModChest"] || [lbl.text containsString:@"FPS"]) {
+                    *outRow = child;
+                    *outLabel = lbl;
+                }
+            }
+            if ([sub isKindOfClass:[UISwitch class]]) {
+                *outSwitch = (UISwitch *)sub;
+            }
+        }
+        if (*outRow) return;
+        if (![child isKindOfClass:[UILabel class]] &&
+            ![child isKindOfClass:[UIButton class]] &&
+            ![child isKindOfClass:[UISwitch class]] &&
+            child.subviews.count > 0) {
+            RecursiveFindFPSRow(child, outRow, outLabel, outSwitch);
+        }
+    }
+}
+
 + (void)installFPSRowInViewController:(UIViewController *)vc {
     if (!vc || !vc.isViewLoaded) return;
     
@@ -499,37 +524,11 @@ static void InstallAuthHooks(void) {
     }
     if (!scrollView) return;
     
-    __block UIView *targetRow = nil;
-    __block UILabel *targetLabel = nil;
-    __block UISwitch *targetSwitch = nil;
+    UIView *targetRow = nil;
+    UILabel *targetLabel = nil;
+    UISwitch *targetSwitch = nil;
     
-    __block void (^findRow)(UIView *parent);
-    findRow = ^(UIView *parent) {
-        if (targetRow) return;
-        for (UIView *child in parent.subviews) {
-            for (UIView *sub in child.subviews) {
-                if ([sub isKindOfClass:[UILabel class]]) {
-                    UILabel *lbl = (UILabel *)sub;
-                    if ([lbl.text isEqualToString:@"ModChest"] || [lbl.text containsString:@"FPS"]) {
-                        targetRow = child;
-                        targetLabel = lbl;
-                    }
-                }
-                if ([sub isKindOfClass:[UISwitch class]]) {
-                    targetSwitch = (UISwitch *)sub;
-                }
-            }
-            if (targetRow) return;
-            if (![child isKindOfClass:[UILabel class]] &&
-                ![child isKindOfClass:[UIButton class]] &&
-                ![child isKindOfClass:[UISwitch class]] &&
-                child.subviews.count > 0) {
-                findRow(child);
-            }
-        }
-    };
-    
-    findRow(scrollView);
+    RecursiveFindFPSRow(scrollView, &targetRow, &targetLabel, &targetSwitch);
     
     if (targetRow && targetLabel) {
         targetLabel.text = @"High FPS (120 FPS)";
@@ -827,6 +826,30 @@ static void InstallAuthHooks(void) {
     }
 }
 
+static void RecursiveFindModChest(UIView *parent, UIView **outRow, UIView **outParent, CGFloat *outHeight) {
+    if (*outRow) return;
+    for (UIView *child in parent.subviews) {
+        if (child.hidden) continue;
+        for (UIView *sub in child.subviews) {
+            if ([sub isKindOfClass:[UILabel class]]) {
+                UILabel *lbl = (UILabel *)sub;
+                if ([lbl.text isEqualToString:@"ModChest"]) {
+                    *outRow = child;
+                    *outParent = parent;
+                    *outHeight = child.frame.size.height + 8.0;
+                    return;
+                }
+            }
+        }
+        if (![child isKindOfClass:[UILabel class]] &&
+            ![child isKindOfClass:[UIButton class]] &&
+            ![child isKindOfClass:[UISwitch class]] &&
+            child.subviews.count > 0) {
+            RecursiveFindModChest(child, outRow, outParent, outHeight);
+        }
+    }
+}
+
 + (void)removeModChestFromViewController:(UIViewController *)vc {
     if (!vc || !vc.isViewLoaded) return;
     
@@ -848,41 +871,11 @@ static void InstallAuthHooks(void) {
     }
     if (!scrollView) return;
     
-    // The ModChest row lives inside aimContainer (or directly in scrollView)
-    // We need to find it at any nesting depth within the scrollView
-    __block UIView *modChestRow = nil;
-    __block UIView *modChestParent = nil;
-    __block CGFloat rowHeight = 0;
+    UIView *modChestRow = nil;
+    UIView *modChestParent = nil;
+    CGFloat rowHeight = 0;
     
-    // Recursive block to find ModChest row
-    __block void (^findModChest)(UIView *parent);
-    findModChest = ^(UIView *parent) {
-        if (modChestRow) return; // already found
-        for (UIView *child in parent.subviews) {
-            if (child.hidden) continue;
-            // Check if this view contains a UILabel with "ModChest"
-            for (UIView *sub in child.subviews) {
-                if ([sub isKindOfClass:[UILabel class]]) {
-                    UILabel *lbl = (UILabel *)sub;
-                    if ([lbl.text isEqualToString:@"ModChest"]) {
-                        modChestRow = child;
-                        modChestParent = parent;
-                        rowHeight = child.frame.size.height + 8.0;
-                        return;
-                    }
-                }
-            }
-            // Recurse into containers (but not UILabels, UIButtons, UISwitches)
-            if (![child isKindOfClass:[UILabel class]] &&
-                ![child isKindOfClass:[UIButton class]] &&
-                ![child isKindOfClass:[UISwitch class]] &&
-                child.subviews.count > 0) {
-                findModChest(child);
-            }
-        }
-    };
-    
-    findModChest(scrollView);
+    RecursiveFindModChest(scrollView, &modChestRow, &modChestParent, &rowHeight);
     
     if (!modChestRow || !modChestParent) return;
     
@@ -948,17 +941,17 @@ static void InstallAuthHooks(void) {
     
     void (*orig_viewWillAppear)(id, SEL, BOOL) = (void (*)(id, SEL, BOOL))method_getImplementation(origMethod);
     
-    IMP custom_viewWillAppear = imp_implementationWithBlock(^(id self, BOOL animated) {
-        orig_viewWillAppear(self, @selector(viewWillAppear:), animated);
+    IMP custom_viewWillAppear = imp_implementationWithBlock(^(id targetSelf, BOOL animated) {
+        orig_viewWillAppear(targetSelf, @selector(viewWillAppear:), animated);
         
-        NSString *className = NSStringFromClass([self class]);
+        NSString *className = NSStringFromClass([targetSelf class]);
         if ([className containsString:@"Exploit"] ||
             [className containsString:@"RootViewController"] ||
             [className containsString:@"HUD"] ||
             [className containsString:@"Proxy"]) {
-            [VIPThemeManager applyVIPThemeToViewController:(UIViewController *)self];
-            [HighFPSManager installFPSRowInViewController:(UIViewController *)self];
-            [VIPThemeManager removeModChestFromViewController:(UIViewController *)self];
+            [VIPThemeManager applyVIPThemeToViewController:(UIViewController *)targetSelf];
+            [HighFPSManager installFPSRowInViewController:(UIViewController *)targetSelf];
+            [VIPThemeManager removeModChestFromViewController:(UIViewController *)targetSelf];
         }
     });
     
@@ -967,7 +960,7 @@ static void InstallAuthHooks(void) {
     // 3. Strict Portrait Orientation Enforcement Across All ViewControllers
     Method origOrient = class_getInstanceMethod(vcClass, @selector(supportedInterfaceOrientations));
     if (origOrient) {
-        IMP custom_supportedOrientations = imp_implementationWithBlock(^(id self) {
+        IMP custom_supportedOrientations = imp_implementationWithBlock(^(id targetSelf) {
             return (UIInterfaceOrientationMask)UIInterfaceOrientationMaskPortrait;
         });
         method_setImplementation(origOrient, custom_supportedOrientations);
@@ -975,7 +968,7 @@ static void InstallAuthHooks(void) {
     
     Method origRotate = class_getInstanceMethod(vcClass, @selector(shouldAutorotate));
     if (origRotate) {
-        IMP custom_shouldAutorotate = imp_implementationWithBlock(^(id self) {
+        IMP custom_shouldAutorotate = imp_implementationWithBlock(^(id targetSelf) {
             return NO;
         });
         method_setImplementation(origRotate, custom_shouldAutorotate);
@@ -1193,7 +1186,15 @@ static void InstallAuthHooks(void) {
     [self.activateButton addTarget:self action:@selector(activateTapped:) forControlEvents:UIControlEventTouchUpInside];
     [self.cardView addSubview:self.activateButton];
     
-    self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleWhite];
+    if (@available(iOS 13.0, *)) {
+        self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+    } else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleWhite];
+#pragma clang diagnostic pop
+    }
+    self.spinner.color = [UIColor whiteColor];
     self.spinner.translatesAutoresizingMaskIntoConstraints = NO;
     self.spinner.hidesWhenStopped = YES;
     [self.activateButton addSubview:self.spinner];
@@ -1257,7 +1258,10 @@ static void InstallAuthHooks(void) {
         if (@available(iOS 10.0, *)) {
             [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
         } else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
             [[UIApplication sharedApplication] openURL:url];
+#pragma clang diagnostic pop
         }
     }
 }
